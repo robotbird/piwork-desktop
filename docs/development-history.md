@@ -211,3 +211,9 @@
 - 更新器分两层：`electron/app-update-core.ts` 纯函数（semver 比较、DMG 资产挑选、release 解析、节流记录校验，node --test 直测）与 `electron/app-update.ts`（fetch 发现、流式下载到 `<userData>/updates/`、按 GitHub 资产 digest 做 sha256 校验、无 digest 退化为 size 校验、进度节流推送、取消、同版本免重复下载、旧包清理）；应用未签名（identity:null），安装方式为打开 DMG 由用户拖入 Applications，不做自动替换。IPC 走 `app-update:*` + `app-update:changed`（仿 sync 模式），`PIWORK_UPDATE_API` 可覆盖更新源供测试注入。
 - 新增发版流水线 `.github/workflows/release.yml`：推 `v*` tag 在 macos-14 构建，校验 tag 与 package.json 版本一致后 `pnpm release:mac`（electron-builder --publish always）发布 Release（DMG/ZIP/latest-mac.yml）。
 - 验证：`pnpm build`、97 项 Node 测试（新增 app-update.test.mjs 5 项）、desktop-e2e、新增 `tests/app-update-e2e.mjs`（本地 mock：自动发现、侧栏提示、取消下载、坏 sha256 拒绝、正常下载与免重复下载、stub shell.openPath 打开安装包、无新版回退）通过；关于页两种状态（可下载/已就绪）经真实窗口截图核对。GitHub Actions 实际发版与旧版本自动发现待仓库具备发版条件后演练。
+
+## 仓库初始化与 0.1.0 首发（2026-11-08）
+
+- 初始化 git 仓库并推送 GitHub（robotbird/piwork-desktop，保留远端 Initial commit 的 LICENSE）：259 个文件首轮提交，`v0.1.0` tag 触发 release.yml 完成 macOS arm64 构建并发布首个 Release（DMG/ZIP/latest-mac.yml，DMG 242.69 MB，GitHub 资产附 sha256 digest）。
+- CI 修复三处：`macos-14` runner 标签已弃用改 `macos-latest`；GitHub macOS 镜像自带 `ELECTRON_SKIP_BINARY_DOWNLOAD=1` 导致 electron 二进制缺失，job 级置空覆盖并加 dist 缺失兜底；`GITHUB_TOKEN` 默认只读导致 electron-builder 建 Release 403，补 `permissions: contents: write`。
+- electron-builder 默认创建 draft Release，工作流末尾自动 `gh release edit --draft=false` 转正式；已用真实 `releases/latest` 响应验证更新器解析（0.1.0 → 已是最新；旧版本 → 完整 DMG 下载信息含 sha256）。

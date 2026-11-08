@@ -48,3 +48,8 @@ jobs:
         run: pnpm --dir apps/desktop release:mac
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # electron-builder 默认创建 draft Release;自动转正式,客户端 releases/latest 才能发现
+      - name: Publish draft release
+        run: gh release edit "$GITHUB_REF_NAME" --draft=false
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
