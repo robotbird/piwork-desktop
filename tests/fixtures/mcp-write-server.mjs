@@ -1,0 +1,5 @@
+import readline from 'node:readline';
+import {writeFileSync} from 'node:fs';
+if(process.argv[3]){writeFileSync(process.argv[3],String(process.pid));setInterval(()=>{},1000)}
+const lines=readline.createInterface({input:process.stdin});
+lines.on('line',line=>{const req=JSON.parse(line);if(req.id===undefined)return;let result;if(req.method==='initialize')result={protocolVersion:req.params.protocolVersion,capabilities:{tools:{}},serverInfo:{name:'fixture',version:'1.0.0'}};else if(req.method==='tools/list')result={tools:[{name:'echo',description:'Echo text',inputSchema:{type:'object',properties:{text:{type:'string'}},required:['text']}},{name:'write',description:'Write a test marker',inputSchema:{type:'object',properties:{text:{type:'string'}},required:['text']}}]};else if(req.method==='tools/call'){if(req.params.name==='write')writeFileSync(process.argv[2],req.params.arguments.text);result={content:[{type:'text',text:'result: '+req.params.arguments.text}]}}else result={};process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:req.id,result})+'\n')});

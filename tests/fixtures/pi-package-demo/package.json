@@ -1,0 +1,11 @@
+{
+  "name": "pi-package-demo",
+  "version": "1.0.0",
+  "description": "Fixture package for pi package resource counting",
+  "keywords": ["pi-package"],
+  "pi": {
+    "extensions": ["src/ext/main.ts", "src/ext/extra.js"],
+    "skills": ["skills"],
+    "prompts": ["prompts/report.md"]
+  }
+}

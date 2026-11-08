@@ -1,0 +1,324 @@
+{
+  "sourceRepo": "../piwork",
+  "lastSyncCommit": "81bc9e3ebbb7f6b778d205817de106dabaf8a773",
+  "entries": [
+    {
+      "source": "public/piwork-logo.svg",
+      "dest": "apps/desktop/src/brand/logo.svg",
+      "mode": "verbatim"
+    },
+    {
+      "source": "app/icon.png",
+      "dest": "apps/desktop/src/brand/icon.png",
+      "mode": "verbatim",
+      "postSyncNote": "run `pnpm --dir apps/desktop icons` to regenerate build/icon.icns + public/icon.png"
+    },
+    {
+      "source": "components/auth/pi-logo.tsx",
+      "dest": "apps/desktop/src/brand/pi-logo.tsx",
+      "mode": "verbatim"
+    },
+    {
+      "source": "public/images/model-providers",
+      "dest": "apps/desktop/src/brand/images/model-providers",
+      "mode": "verbatim",
+      "dir": true
+    },
+    {
+      "source": "public/images/file-types",
+      "dest": "apps/desktop/src/brand/images/file-types",
+      "mode": "verbatim",
+      "dir": true
+    },
+    {
+      "source": "app/globals.css",
+      "dest": "apps/desktop/src/web/app/globals.css",
+      "mode": "adapted",
+      "rewrites": [
+        {
+          "from": "@source \"../node_modules/streamdown/dist/index.js\";",
+          "to": "@source \"../../../node_modules/streamdown/dist/*.js\";"
+        }
+      ],
+      "baseline": "81bc9e3ebbb7f6b778d205817de106dabaf8a773"
+    },
+    {
+      "source": "components/ui/button.tsx",
+      "dest": "apps/desktop/src/web/components/ui/button.tsx",
+      "mode": "verbatim"
+    },
+    {
+      "source": "components/ui/dropdown-menu.tsx",
+      "dest": "apps/desktop/src/web/components/ui/dropdown-menu.tsx",
+      "mode": "verbatim"
+    },
+    {
+      "source": "components/ui/popover.tsx",
+      "dest": "apps/desktop/src/web/components/ui/popover.tsx",
+      "mode": "verbatim"
+    },
+    {
+      "source": "lib/utils.ts",
+      "dest": "apps/desktop/src/web/lib/utils.ts",
+      "mode": "adapted",
+      "note": "trimmed copy: only cn/copyTextToClipboard/generateUUID/sanitizeText kept; upstream helpers needing db/schema, types, errors, date-fns are excluded until those modules sync. --apply restores the full file — re-trim manually per the header comment",
+      "baseline": "81bc9e3ebbb7f6b778d205817de106dabaf8a773"
+    },
+    {
+      "source": "i18n/messages/zh.json",
+      "dest": "apps/desktop/src/web/i18n/messages/zh.json",
+      "mode": "verbatim"
+    },
+    {
+      "source": "i18n/messages/en.json",
+      "dest": "apps/desktop/src/web/i18n/messages/en.json",
+      "mode": "verbatim"
+    },
+    {
+      "source": "lib/i18n/index.ts",
+      "dest": "apps/desktop/src/web/lib/i18n/index.ts",
+      "mode": "verbatim"
+    },
+    {
+      "source": "lib/i18n/types.ts",
+      "dest": "apps/desktop/src/web/lib/i18n/types.ts",
+      "mode": "verbatim"
+    },
+    {
+      "source": "lib/i18n/messages.ts",
+      "dest": "apps/desktop/src/web/lib/i18n/messages.ts",
+      "mode": "verbatim"
+    },
+    {
+      "source": "lib/runtime/protocol/events.ts",
+      "dest": "apps/desktop/src/web/lib/runtime/protocol/events.ts",
+      "mode": "verbatim"
+    },
+    {
+      "source": "lib/chat/tool-status.ts",
+      "dest": "apps/desktop/src/web/lib/chat/tool-status.ts",
+      "mode": "verbatim"
+    },
+    {
+      "source": "lib/types.ts",
+      "dest": "apps/desktop/src/web/lib/types.ts",
+      "mode": "adapted",
+      "baseline": "81bc9e3ebbb7f6b778d205817de106dabaf8a773",
+      "note": "header rewrites: local ArtifactKind/Suggestion/DesktopUiTool replace artifact+tools+db imports; re-apply when syncing"
+    },
+    {
+      "source": "app/(chat)/api/chat/stream-mapping.ts",
+      "dest": "apps/desktop/src/web/app/(chat)/api/chat/stream-mapping.ts",
+      "mode": "adapted",
+      "baseline": "81bc9e3ebbb7f6b778d205817de106dabaf8a773",
+      "note": "import rewrites: protocol→protocol/events, RunSubscription→structural local type; re-apply when syncing"
+    },
+    {
+      "source": "components/ui/button-group.tsx",
+      "dest": "apps/desktop/src/web/components/ui/button-group.tsx",
+      "mode": "verbatim"
+    },
+    {
+      "source": "components/ui/tooltip.tsx",
+      "dest": "apps/desktop/src/web/components/ui/tooltip.tsx",
+      "mode": "verbatim"
+    },
+    {
+      "source": "components/ui/badge.tsx",
+      "dest": "apps/desktop/src/web/components/ui/badge.tsx",
+      "mode": "verbatim"
+    },
+    {
+      "source": "components/ui/collapsible.tsx",
+      "dest": "apps/desktop/src/web/components/ui/collapsible.tsx",
+      "mode": "verbatim"
+    },
+    {
+      "source": "components/ui/select.tsx",
+      "dest": "apps/desktop/src/web/components/ui/select.tsx",
+      "mode": "verbatim"
+    },
+    {
+      "source": "components/ui/separator.tsx",
+      "dest": "apps/desktop/src/web/components/ui/separator.tsx",
+      "mode": "verbatim"
+    },
+    {
+      "source": "components/ui/spinner.tsx",
+      "dest": "apps/desktop/src/web/components/ui/spinner.tsx",
+      "mode": "verbatim"
+    },
+    {
+      "source": "components/ai-elements/message.tsx",
+      "dest": "apps/desktop/src/web/components/ai-elements/message.tsx",
+      "mode": "verbatim"
+    },
+    {
+      "source": "components/ai-elements/tool.tsx",
+      "dest": "apps/desktop/src/web/components/ai-elements/tool.tsx",
+      "mode": "verbatim"
+    },
+    {
+      "source": "components/ai-elements/reasoning.tsx",
+      "dest": "apps/desktop/src/web/components/ai-elements/reasoning.tsx",
+      "mode": "verbatim"
+    },
+    {
+      "source": "components/ai-elements/shimmer.tsx",
+      "dest": "apps/desktop/src/web/components/ai-elements/shimmer.tsx",
+      "mode": "verbatim"
+    },
+    {
+      "source": "components/ai-elements/code-block.tsx",
+      "dest": "apps/desktop/src/web/components/ai-elements/code-block.tsx",
+      "mode": "verbatim"
+    },
+    {
+      "source": "lib/chat/reasoning-duration.ts",
+      "dest": "apps/desktop/src/web/lib/chat/reasoning-duration.ts",
+      "mode": "verbatim"
+    },
+    {
+      "source": "lib/ai/attachment-types.ts",
+      "dest": "apps/desktop/src/web/lib/ai/attachment-types.ts",
+      "mode": "verbatim"
+    },
+    {
+      "source": "lib/search/protocol.ts",
+      "dest": "apps/desktop/src/web/lib/search/protocol.ts",
+      "mode": "verbatim"
+    },
+    {
+      "source": "lib/i18n/legacy-keys.ts",
+      "dest": "apps/desktop/src/web/lib/i18n/legacy-keys.ts",
+      "mode": "verbatim"
+    },
+    {
+      "source": "i18n/legacy-keys.json",
+      "dest": "apps/desktop/src/web/i18n/legacy-keys.json",
+      "mode": "verbatim"
+    },
+    {
+      "source": "hooks/use-messages.tsx",
+      "dest": "apps/desktop/src/web/hooks/use-messages.tsx",
+      "mode": "verbatim"
+    },
+    {
+      "source": "hooks/use-scroll-to-bottom.tsx",
+      "dest": "apps/desktop/src/web/hooks/use-scroll-to-bottom.tsx",
+      "mode": "verbatim"
+    },
+    {
+      "source": "components/chat/data-stream-provider.tsx",
+      "dest": "apps/desktop/src/web/components/chat/data-stream-provider.tsx",
+      "mode": "verbatim"
+    },
+    {
+      "source": "components/chat/message-reasoning.tsx",
+      "dest": "apps/desktop/src/web/components/chat/message-reasoning.tsx",
+      "mode": "verbatim"
+    },
+    {
+      "source": "components/chat/greeting.tsx",
+      "dest": "apps/desktop/src/web/components/chat/greeting.tsx",
+      "mode": "verbatim"
+    },
+    {
+      "source": "components/chat/weather.tsx",
+      "dest": "apps/desktop/src/web/components/chat/weather.tsx",
+      "mode": "verbatim"
+    },
+    {
+      "source": "components/chat/text-attachment-preview.tsx",
+      "dest": "apps/desktop/src/web/components/chat/text-attachment-preview.tsx",
+      "mode": "verbatim"
+    },
+    {
+      "source": "components/chat/messages.tsx",
+      "dest": "apps/desktop/src/web/components/chat/messages.tsx",
+      "mode": "verbatim"
+    },
+    {
+      "source": "components/chat/message-actions.tsx",
+      "dest": "apps/desktop/src/web/components/chat/message-actions.tsx",
+      "mode": "verbatim"
+    },
+    {
+      "source": "components/chat/icons.tsx",
+      "dest": "apps/desktop/src/web/components/chat/icons.tsx",
+      "mode": "verbatim"
+    },
+    {
+      "source": "components/preferences-provider.tsx",
+      "dest": "apps/desktop/src/web/components/preferences-provider.tsx",
+      "mode": "adapted",
+      "baseline": "81bc9e3ebbb7f6b778d205817de106dabaf8a773",
+      "note": "rewrite: next/navigation → @desktop/compat/navigation (comment at header)"
+    },
+    {
+      "source": "components/chat/message.tsx",
+      "dest": "apps/desktop/src/web/components/chat/message.tsx",
+      "mode": "adapted",
+      "baseline": "81bc9e3ebbb7f6b778d205817de106dabaf8a773",
+      "note": "rewrite: @/hooks/use-active-chat → @desktop/chat/desktop-chat-provider"
+    },
+    {
+      "source": "components/chat/preview-attachment.tsx",
+      "dest": "apps/desktop/src/web/components/chat/preview-attachment.tsx",
+      "mode": "adapted",
+      "baseline": "81bc9e3ebbb7f6b778d205817de106dabaf8a773",
+      "note": "rewrite: next/image → @desktop/compat/image (named import)"
+    },
+    {
+      "source": "components/chat/user-avatar.tsx",
+      "dest": "apps/desktop/src/web/components/chat/user-avatar.tsx",
+      "mode": "adapted",
+      "baseline": "81bc9e3ebbb7f6b778d205817de106dabaf8a773",
+      "note": "rewrite: next/image → @desktop/compat/image (named import)"
+    },
+    {
+      "source": "components/documents/file-type-icon.tsx",
+      "dest": "apps/desktop/src/web/components/documents/file-type-icon.tsx",
+      "mode": "adapted",
+      "baseline": "81bc9e3ebbb7f6b778d205817de106dabaf8a773",
+      "note": "rewrite: next/image → @desktop/compat/image (named import)"
+    },
+    {
+      "source": "components/ui/dialog.tsx",
+      "dest": "apps/desktop/src/web/components/ui/dialog.tsx",
+      "mode": "verbatim"
+    },
+    {
+      "source": "components/ui/input.tsx",
+      "dest": "apps/desktop/src/web/components/ui/input.tsx",
+      "mode": "verbatim"
+    },
+    {
+      "source": "lib/documents/types.ts",
+      "dest": "apps/desktop/src/web/lib/documents/types.ts",
+      "mode": "verbatim"
+    },
+    {
+      "source": "components/ui/textarea.tsx",
+      "dest": "apps/desktop/src/web/components/ui/textarea.tsx",
+      "mode": "verbatim"
+    },
+    {
+      "source": "components/ui/label.tsx",
+      "dest": "apps/desktop/src/web/components/ui/label.tsx",
+      "mode": "verbatim"
+    },
+    {
+      "source": "lib/scheduler/display.ts",
+      "dest": "apps/desktop/src/web/lib/scheduler/display.ts",
+      "mode": "verbatim"
+    },
+    {
+      "source": "components/scheduled-tasks/scheduled-tasks-panel.tsx",
+      "dest": "apps/desktop/src/web/components/scheduled-tasks/scheduled-tasks-panel.tsx",
+      "mode": "adapted",
+      "baseline": "81bc9e3ebbb7f6b778d205817de106dabaf8a773",
+      "note": "desktop deltas: data layer swaps REST/SWR-fetchJSON for window.desktop IPC (listSchedules/createSchedule/updateSchedule/toggleSchedule/deleteSchedule/runSchedule) with a Task view model derived from Schedule+ScheduleRun; usePreferences -> useTranslations + language prop; composer submit calls onAskAI (switch to a fresh chat and auto-send) instead of location.assign('/?query='); attachments/library picker/SidebarTrigger/next-link removed (the + trigger keeps the web chat.uploadMenu label, its menu only lists manual creation); TaskEditor gains project/skill/MCP selects; extra run statuses (missed/skipped) and detail error codes localized in-component; IPC error messages localized via a local dictionary; header/h1/h2/article become divs because the app shell's unlayered global element rules (fixed 58px header, 23px h1, bordered article, borderless textarea) would override the tailwind utilities — the page module css restores the Textarea border/fill and wraps the page in TooltipProvider (no global provider in the desktop shell). All shared copy/labels/defaults (incl. the Asia/Shanghai timezone default) match the web catalog verbatim. Re-apply these edits after syncing."
+    }
+  ]
+}

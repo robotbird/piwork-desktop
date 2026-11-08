@@ -1,0 +1,21 @@
+packages:
+  - apps/*
+allowBuilds:
+  '@google/genai': false
+  '@parcel/watcher': true
+  '@swc/core': true
+  better-sqlite3: true
+  electron: true
+  electron-winstaller: false
+  esbuild: true
+  protobufjs: false
+minimumReleaseAgeExclude:
+  - '@earendil-works/pi-agent-core@1.5.0'
+  - '@earendil-works/pi-ai@1.5.0'
+  - '@earendil-works/pi-codemode@1.5.0'
+  - '@earendil-works/pi-coding-agent@1.5.0'
+  - '@earendil-works/pi-mcp@1.5.0'
+  - '@earendil-works/pi-schema@1.5.0'
+  - '@earendil-works/pi-telemetry@1.5.0'
+  - '@earendil-works/pi-tui@1.5.0'
+  - 'docx@9.15.2'

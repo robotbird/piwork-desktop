@@ -1,0 +1,5 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {validateSchedule,nextSchedule,dueState} from '../apps/desktop/electron/schedule.ts';
+test('validates schedule and calculates the next time in its timezone',()=>{const input={name:' 报告 ',prompt:' 整理 ',cron:'0 9 * * *',timezone:'Asia/Shanghai',projectId:null};assert.equal(validateSchedule(input).name,'报告');assert.equal(new Date(nextSchedule(input.cron,input.timezone,Date.parse('2026-11-03T00:00:00Z'))).toISOString(),'2026-11-03T01:00:00.000Z')});
+test('rejects invalid cron and timezones',()=>{const v={name:'a',prompt:'b',cron:'bad',timezone:'UTC',projectId:null};assert.throws(()=>validateSchedule(v));assert.throws(()=>validateSchedule({...v,cron:'0 9 * * *',timezone:'invalid'}));assert.throws(()=>validateSchedule({...v,cron:'* * * * * *'}))});
+test('distinguishes due, missed and overlapping runs',()=>{assert.equal(dueState(1000,999,false),'future');assert.equal(dueState(1000,2000,false),'run');assert.equal(dueState(1000,62000,false),'missed');assert.equal(dueState(1000,2000,true),'overlap')});

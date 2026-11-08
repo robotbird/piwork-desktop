@@ -1,0 +1,39 @@
+{
+  "name": "piwork-desktop",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.25.0",
+  "scripts": {
+    "dev": "pnpm --dir apps/desktop dev",
+    "build": "pnpm --dir apps/desktop build",
+    "test": "node --test tests/*.test.mjs",
+    "pack:mac": "pnpm --dir apps/desktop pack:mac",
+    "dist:mac": "pnpm --dir apps/desktop dist:mac",
+    "release:mac": "pnpm --dir apps/desktop release:mac",
+    "test:app-update": "pnpm build && node tests/app-update-e2e.mjs",
+    "test:packaged-project-agent": "PIWORK_PACKAGED_APP=1 node tests/project-agent-e2e.mjs",
+    "test:project-agent": "pnpm build && node tests/project-agent-e2e.mjs",
+    "test:chat-interaction": "pnpm build && node tests/chat-interaction-e2e.mjs",
+    "test:attachment-preview": "pnpm build && node tests/chat-attachment-preview-e2e.mjs",
+    "test:desktop": "pnpm build && node tests/desktop-e2e.mjs",
+    "test:office-security": "pnpm build && node tests/office-security-e2e.mjs",
+    "test:packaged-office": "PIWORK_PACKAGED_APP=1 node tests/office-security-e2e.mjs",
+    "test:mcp": "pnpm build && node tests/mcp-execution-e2e.mjs",
+    "test:packaged-mcp": "PIWORK_PACKAGED_APP=1 node tests/mcp-execution-e2e.mjs",
+    "setup:electron": "pnpm --dir apps/desktop setup:electron",
+    "rebuild:electron": "pnpm --dir apps/desktop exec electron-builder install-app-deps",
+    "test:sqlite-native": "pnpm --dir apps/desktop exec electron ../../tests/sqlite-native-smoke.mjs",
+    "test:single-instance": "node tests/single-instance-e2e.mjs",
+    "test:packaged-instance": "PIWORK_PACKAGED_APP=1 node tests/single-instance-e2e.mjs",
+    "test:packaged-sqlite": "ELECTRON_RUN_AS_NODE=1 'apps/desktop/release/mac-arm64/PiWork.app/Contents/MacOS/PiWork' tests/sqlite-packaged-smoke.mjs",
+    "test:backup": "ELECTRON_RUN_AS_NODE=1 apps/desktop/node_modules/.bin/electron tests/metadata-backup-smoke.mjs",
+    "test:packaged-backup": "PIWORK_PACKAGED_APP=1 ELECTRON_RUN_AS_NODE=1 'apps/desktop/release/mac-arm64/PiWork.app/Contents/MacOS/PiWork' tests/metadata-backup-smoke.mjs",
+    "test:migration": "ELECTRON_RUN_AS_NODE=1 apps/desktop/node_modules/.bin/electron tests/legacy-migration-smoke.mjs",
+    "test:packaged-migration": "PIWORK_PACKAGED_APP=1 ELECTRON_RUN_AS_NODE=1 'apps/desktop/release/mac-arm64/PiWork.app/Contents/MacOS/PiWork' tests/legacy-migration-smoke.mjs",
+    "test:metadata": "ELECTRON_RUN_AS_NODE=1 apps/desktop/node_modules/.bin/electron tests/metadata-store-smoke.mjs",
+    "test:packaged-metadata": "PIWORK_PACKAGED_APP=1 ELECTRON_RUN_AS_NODE=1 'apps/desktop/release/mac-arm64/PiWork.app/Contents/MacOS/PiWork' tests/metadata-store-smoke.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.61.1"
+  }
+}

@@ -1,0 +1,10 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtemp,readFile,writeFile,mkdir,rm} from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import {SettingsStorage} from '../apps/desktop/electron/settings-storage.ts';
+const valid=x=>!!x&&typeof x==='object'&&typeof x.value==='number';
+test('corrupt settings fail without changing the existing file',async()=>{const dir=await mkdtemp(path.join(os.tmpdir(),'piwork-settings-'));try{const file=path.join(dir,'settings.json');await writeFile(file,'{"value":');const store=new SettingsStorage(file,{value:0},valid);await assert.rejects(store.load());assert.equal(await readFile(file,'utf8'),'{"value":')}finally{await rm(dir,{recursive:true,force:true})}});
+test('failed concurrent update cannot lose or reorder later successful writes',async()=>{const dir=await mkdtemp(path.join(os.tmpdir(),'piwork-settings-'));try{const file=path.join(dir,'settings.json');const store=new SettingsStorage(file,{value:0},valid);await store.load();const first=store.update(()=>{throw new Error('write rejected')});const second=store.update(value=>({value:value.value+1}));const third=store.update(value=>({value:value.value+1}));await assert.rejects(first,/rejected/);await Promise.all([second,third]);assert.equal(JSON.parse(await readFile(file,'utf8')).value,2);assert.equal((await new SettingsStorage(file,{value:0},valid).load()).value,2)}finally{await rm(dir,{recursive:true,force:true})}});
+test('filesystem failure does not replace the previous settings and a later write succeeds',async()=>{const dir=await mkdtemp(path.join(os.tmpdir(),'piwork-settings-'));try{const parent=path.join(dir,'data');await writeFile(parent,'not a directory');const file=path.join(parent,'settings.json');const store=new SettingsStorage(file,{value:3},valid);await assert.rejects(store.update(()=>({value:9})));assert.equal(await readFile(parent,'utf8'),'not a directory');await rm(parent);await mkdir(parent);await store.update(value=>({value:value.value+1}));assert.equal(JSON.parse(await readFile(file,'utf8')).value,4)}finally{await rm(dir,{recursive:true,force:true})}});

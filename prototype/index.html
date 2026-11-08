@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>piwork Desktop · 对话界面</title><link rel="stylesheet" href="style.css"></head>
+<body>
+<div class="app" id="app">
+ <aside class="sidebar" id="sidebar">
+  <div class="window"><div class="lights"><i></i><i></i><i></i></div><button class="icon sidebar-close" aria-label="收起侧边栏" title="收起侧边栏" data-action="sidebar">▤</button></div>
+  <div class="brand"><img src="logo.svg" alt=""><strong>piwork</strong><span>desktop</span></div>
+  <button class="new-chat" data-action="new"><span class="plus">＋</span> 新对话 <kbd>⌘ N</kbd></button>
+  <div class="section-label projects-label">项目 <button aria-label="添加项目" data-toast="项目管理将在后续版本中开放">＋</button></div>
+  <button class="project active"><span class="folder-icon">▰</span><span>咨询规划部</span><span class="chev">⌄</span></button>
+  <div class="threads"><button class="thread selected"><span class="status-dot"></span><span>整理本周项目进展</span></button><button class="thread" data-toast="示例任务"><span class="thread-spacer"></span><span>会议纪要与待办整理</span></button><button class="thread" data-toast="示例任务"><span class="thread-spacer"></span><span>行业研究资料汇总</span></button></div>
+  <div class="section-label recent">最近对话 <button aria-label="搜索任务" data-toast="搜索将在后续版本中开放">⌕</button></div>
+  <button class="thread other" data-toast="示例任务"><span class="thread-spacer"></span><span>年度工作计划初稿</span></button><button class="thread other" data-toast="示例任务"><span class="thread-spacer"></span><span>整理客户调研记录</span></button>
+  <div class="sidebar-bottom"><button class="profile" data-toast="账号设置将在后续版本中开放"><span class="avatar">Y</span><span class="profile-name"><b>Yepeng</b><small>个人工作空间</small></span><span class="dots">···</span></button></div>
+ </aside>
+ <main class="main">
+  <header class="main-header"><div class="title-wrap"><button class="icon show-sidebar" data-action="sidebar" aria-label="展开侧边栏">▤</button><div class="breadcrumb"><span>咨询规划部</span><span class="slash">/</span><strong>整理本周项目进展</strong></div></div><div class="header-actions"><div class="appearance-control"><button class="icon" data-action="theme" aria-label="外观设置" aria-expanded="false" title="外观设置">◐</button><div class="appearance-menu" id="appearanceMenu" hidden><div class="appearance-title">外观</div><button data-appearance="system">跟随系统 <span></span></button><button data-appearance="light">浅色 <span></span></button><button data-appearance="dark">深色 <span></span></button></div></div><button class="icon" data-action="preview" aria-label="切换文件预览" title="切换文件预览">◫</button><button class="icon" data-toast="更多操作将在后续版本中开放" aria-label="更多操作">···</button></div></header>
+  <div class="chat-scroll" id="chatScroll"><div class="conversation">
+   <div class="date"><span>今天</span></div>
+   <div class="user-row"><div class="user-bubble">请帮我整理本周的项目进展，汇总各项目的关键成果、存在的问题和下周计划，生成一份简洁的周报。</div></div>
+   <div class="attachment"><span class="file-icon xls">▦</span><span><b>项目进展汇总.xlsx</b><small>Excel 表格 · 48 KB</small></span><span class="check">✓</span></div>
+   <div class="assistant-row"><div class="assistant-mark"><img src="logo.svg" alt="piwork"></div><div class="response"><div class="assistant-name">piwork <span>10:24</span></div><p>好的，我会先梳理项目资料，提取本周进展、风险和下周计划，再整理成一份便于汇报的周报。</p>
+    <div class="steps"><button class="step" data-action="step"><span class="step-check">✓</span><span>读取项目进展汇总.xlsx</span><span class="step-time">已完成</span><span class="step-arrow">⌄</span></button><div class="step-detail" hidden>已读取 4 个工作表，提取项目名称、进展、问题和计划。</div><button class="step" data-action="step"><span class="step-check">✓</span><span>整理项目进展与风险</span><span class="step-time">已完成</span><span class="step-arrow">⌄</span></button><div class="step-detail" hidden>已按项目归纳进展，并标记需要关注的事项。</div><button class="step" data-action="step"><span class="step-check">✓</span><span>生成周报文档</span><span class="step-time">已完成</span><span class="step-arrow">⌄</span></button><div class="step-detail" hidden>已生成项目周报初稿。</div></div>
+    <p>已整理完成。本周共汇总 <strong>4 个项目</strong>，其中 2 项取得阶段性进展，1 项需要关注需求确认时间。</p><p>我将重点成果和下一步计划放在了文档中，你可以在右侧预览。</p>
+    <button class="output-file" data-action="open-preview"><span class="file-icon doc">▤</span><span class="file-meta"><b>项目周报_本周.md</b><small>已生成 · Markdown 文档</small></span><span class="file-open">查看文件 ↗</span></button>
+    <div class="response-actions"><button data-action="copy" aria-label="复制回复" title="复制回复">▢</button><button data-toast="感谢反馈" aria-label="有帮助">♧</button><button data-toast="感谢反馈" aria-label="没帮助">♧</button></div>
+   </div></div>
+   <div id="newMessages"></div>
+  </div></div>
+  <div class="composer-wrap"><form class="composer" id="composer"><textarea id="input" rows="2" placeholder="继续向 piwork 提问，或描述你想完成的任务…" aria-label="输入消息"></textarea><div class="composer-bottom"><div class="composer-tools"><button type="button" class="tool-add" data-action="attach" aria-label="添加附件" title="添加附件">＋</button><input type="file" id="fileInput" hidden><button type="button" class="tool-label" data-action="model">自动选择 <span>⌄</span></button><button type="button" class="tool-label skill" data-toast="技能选择将在后续版本中开放">✧ <span>技能</span></button></div><div class="composer-right"><span id="attached"></span><button class="send" type="submit" aria-label="发送消息">↑</button></div></div></form><div class="composer-hint">内容由 AI 生成，请在使用前核对重要信息。</div></div>
+ </main>
+ <aside class="preview" id="preview"><header class="preview-header"><div class="preview-heading"><span class="file-icon mini doc">▤</span><span><strong>项目周报_本周.md</strong><small>项目文件 <span>·</span> 刚刚更新</small></span></div><div class="preview-actions"><button class="icon" data-action="expand" title="展开预览" aria-label="展开预览">⤢</button><button class="icon" data-action="preview" title="关闭预览" aria-label="关闭预览">×</button></div></header><div class="preview-tabs"><button class="tab active" data-action="tab" data-tab="preview">预览</button><button class="tab" data-action="tab" data-tab="source">源文件</button><div class="preview-spacer"></div><button class="more" data-action="copy-file">复制内容 <span>▢</span></button></div><div class="document-scroll"><article class="document" id="document"><div class="doc-eyebrow"><span>项目周报</span><span>WEEKLY REPORT</span></div><h1>本周项目进展</h1><p class="doc-subtitle">咨询规划部 · 项目工作周报</p><div class="doc-rule"></div><div class="doc-date">汇总时间 <strong>2026.11.03</strong><span></span> 涉及项目 <strong>4 项</strong></div><h2>一、本周工作概览</h2><p>本周各项目按计划推进，重点围绕需求梳理、方案编制及沟通协调开展工作。整体进展平稳，部分事项需持续跟进。</p><div class="summary-box"><div><span>在推进</span><strong>4 <small>项</small></strong></div><div><span>阶段成果</span><strong>2 <small>项</small></strong></div><div><span>待关注</span><strong>1 <small>项</small></strong></div></div><h2>二、项目进展</h2><h3><span>01</span> 智能化场景规划项目</h3><p>完成重点业务场景梳理及需求初步分类，形成场景清单，并与相关部门沟通确认。</p><h3><span>02</span> 数据治理咨询项目</h3><p>完成现状资料收集，初步明确数据治理范围和实施思路。</p><h2>三、下周工作计划</h2><ul><li>推进重点场景需求确认与方案完善</li><li>跟进数据治理项目调研安排</li><li>汇总待决问题并协调相关负责人</li></ul><div class="doc-footer">piwork <span>·</span> 工作成果</div></article><pre class="source" id="source" hidden># 本周项目进展
+
+咨询规划部 · 项目工作周报
+
+## 一、本周工作概览
+本周各项目按计划推进，重点围绕需求梳理、方案编制及沟通协调开展工作。
+
+## 二、项目进展
+### 智能化场景规划项目
+完成重点业务场景梳理及需求初步分类。
+
+### 数据治理咨询项目
+完成现状资料收集，初步明确数据治理范围。</pre></div><div class="preview-footer"><span>▧</span> 项目空间 / 咨询规划部 / 项目周报_本周.md</div></aside>
+</div><div id="toast" role="status"></div><script type="module" src="app.js"></script></body></html>

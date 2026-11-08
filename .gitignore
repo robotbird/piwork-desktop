@@ -1,0 +1,12 @@
+node_modules/
+dist/
+dist-electron/
+release/
+.DS_Store
+
+apps/desktop/build/third-party/
+
+# 本地会话/视觉核对产物,不入库
+.visual-tmp/
+.zcode/
+.tmp-*.mjs

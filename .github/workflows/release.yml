@@ -1,0 +1,35 @@
+# 发版流水线:推 v* tag → macos-14(arm64)构建 DMG/ZIP → electron-builder 发布 GitHub Release。
+# 客户端自动更新(app-update.ts)从本仓库 Releases latest 发现版本并下载 PiWork-<version>-arm64.dmg。
+# 发版步骤:bump apps/desktop/package.json 的 version → 提交 → 打同名 vX.Y.Z tag → push tag。
+name: release
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release-mac:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      # pnpm 版本取根 package.json 的 packageManager 字段
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Verify tag matches package version
+        run: |
+          VERSION="v$(node -p "require('./apps/desktop/package.json').version")"
+          if [ "$VERSION" != "${GITHUB_REF_NAME}" ]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match apps/desktop/package.json version ${VERSION}" >&2
+            exit 1
+          fi
+      - run: pnpm install --frozen-lockfile
+      # better-sqlite3 等原生模块按 Electron ABI 重编(与本地 rebuild:electron 同步骤)
+      - name: Rebuild native modules for Electron
+        run: pnpm --dir apps/desktop exec electron-builder install-app-deps
+      - name: Build and publish GitHub Release
+        run: pnpm --dir apps/desktop release:mac
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
