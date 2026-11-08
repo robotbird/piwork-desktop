@@ -1,4 +1,4 @@
-# 发版流水线:推 v* tag → macos-14(arm64)构建 DMG/ZIP → electron-builder 发布 GitHub Release。
+# 发版流水线:推 v* tag → macos-latest(arm64)构建 DMG/ZIP → electron-builder 发布 GitHub Release。
 # 客户端自动更新(app-update.ts)从本仓库 Releases latest 发现版本并下载 PiWork-<version>-arm64.dmg。
 # 发版步骤:bump apps/desktop/package.json 的 version → 提交 → 打同名 vX.Y.Z tag → push tag。
 name: release
@@ -9,7 +9,7 @@ on:
 
 jobs:
   release-mac:
-    runs-on: macos-14
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       # pnpm 版本取根 package.json 的 packageManager 字段
