@@ -10,6 +10,11 @@ on:
 jobs:
   release-mac:
     runs-on: macos-latest
+    # GitHub macOS runner 镜像自带 ELECTRON_SKIP_BINARY_DOWNLOAD=1,会让 electron 的
+    # postinstall 跳过二进制下载,而 licenses:collect 与打包都需要
+    # node_modules/electron/dist;置空覆盖(空字符串在 electron install.js 中为假值)。
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: ''
     steps:
       - uses: actions/checkout@v4
       # pnpm 版本取根 package.json 的 packageManager 字段
@@ -26,6 +31,12 @@ jobs:
             exit 1
           fi
       - run: pnpm install --frozen-lockfile
+      # 兜底:若 install 阶段 electron 二进制仍缺失(跳过变量未被覆盖等),显式补一次
+      - name: Ensure Electron binary is downloaded
+        run: |
+          if [ ! -d apps/desktop/node_modules/electron/dist ]; then
+            node apps/desktop/node_modules/electron/install.js
+          fi
       # better-sqlite3 等原生模块按 Electron ABI 重编(与本地 rebuild:electron 同步骤)
       - name: Rebuild native modules for Electron
         run: pnpm --dir apps/desktop exec electron-builder install-app-deps
