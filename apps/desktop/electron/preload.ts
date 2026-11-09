@@ -37,6 +37,7 @@ const api: DesktopApi = {
   renameChat:(id,title)=>ipcRenderer.invoke('chat:rename',id,title),
   deleteChat:(id)=>ipcRenderer.invoke('chat:delete',id),
   listChats:()=>ipcRenderer.invoke('chat:list'),
+  cacheGeneratedDocument:(id,path)=>ipcRenderer.invoke('chat:cacheGeneratedDocument',id,path),
   openChat:(id)=>ipcRenderer.invoke('chat:open',id),
   pickChatAttachment:(file)=>ipcRenderer.invoke('chat:pick-attachment',file),
   readAttachment:(cache:string)=>ipcRenderer.invoke('chat:readAttachment',cache),

@@ -30,7 +30,7 @@ export function Image({
     : style;
   return (
     <img
-      src={src}
+      src={typeof src==='string'&&src.startsWith('/images/')?`.${src}`:src}
       alt={alt}
       width={fill ? undefined : width}
       height={fill ? undefined : height}

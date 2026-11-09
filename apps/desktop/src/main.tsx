@@ -1,3 +1,4 @@
+import {projectDocumentPath} from './chat/file-links';
 import React, {lazy,Suspense,useEffect,useRef,useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import type {Preferences, Project, ProjectFile, GatewayConfig, ChatSummary, LocalSkill, AccountStatus, PickedAttachment, ChatMessage, ChatAttachmentRef, ApprovalRequest, ApprovalDecision, ToolEvent} from '../shared/types';
@@ -252,6 +253,9 @@ useEffect(()=>{setFolder('');setFileQuery('');setFileError('');setDockTabs(curre
 useEffect(()=>{if(!selected)return;let alive=true;setLoading(true);const timer=setTimeout(()=>{const query=fileQuery.trim();const request=query?window.desktop.searchFiles(selected,query):window.desktop.listFiles(selected,folder);request.then(result=>{if(alive){setFiles(result);setFileError('')}}).catch(()=>{if(alive){setFiles([]);setFileError(t.projectAccessFailed)}}).finally(()=>{if(alive)setLoading(false)})},fileQuery.trim()?250:0);return()=>{alive=false;clearTimeout(timer)}},[selected,folder,fileVersion,fileQuery,activeChat,projects]);
 async function openFile(entry:ProjectFile){if(!selected)return;// 打开文件必定展开面板:折叠状态下的打开不算打开(deepseek 同款语义)
 if(entry.kind==='directory'){setFolder(entry.path);return}
+const documentPath=projectDocumentPath(entry.path,projects.find(project=>project.id===selected)?.folders??[]);
+if(!documentPath){openDocumentTab({path:entry.path,content:'',kind:'unsupported'},t.fileUnavailable);return}
+entry={...entry,path:documentPath};
 // HTML:读文本供静态模式清洗展示;交互模式由 preview:// 协议直接按路径加载(相对资源与 CDN 均可)
 const readError=(error:unknown)=>error instanceof Error&&/\b(?:ENOENT|EACCES|EPERM)\b/.test(error.message)?t.fileUnavailable:t.fileError;
 if(isHtmlFile(entry.path)){
@@ -278,6 +282,19 @@ function attachmentRefOf(value:string|PickedAttachment|null|undefined):ChatAttac
   return typeof value==='string'
     ?{name:value.split('/').at(-1)!,projectPath:value}
     :value.cache?{name:value.name,cachePath:value.cache}:undefined;
+}
+async function openDocumentLink(path:string){
+  const projectPath=projectDocumentPath(path,projects.find(project=>project.id===selected)?.folders??[]);
+  if(selected&&projectPath){await openFile({name:path.split('/').at(-1)!,path:projectPath,kind:'file'});return}
+  try{
+    if(!activeChat)throw new Error('No active chat');
+    const file=await window.desktop.cacheGeneratedDocument(activeChat,path);
+    const preview=await window.desktop.readAttachment(file.cache);
+    openDocumentTab({path,content:preview.content,kind:preview.kind,cache:file.cache,label:file.name});
+  }catch(error){
+    const unavailable=error instanceof Error&&/\b(?:ENOENT|EACCES|EPERM)\b/.test(error.message);
+    openDocumentTab({path,content:'',kind:'unsupported'},unavailable?t.fileUnavailable:t.fileError);
+  }
 }
 async function openAttachment(ref:ChatAttachmentRef){
   if(ref.projectPath){void openFile({name:ref.name,path:ref.projectPath,kind:'file'});return}
@@ -454,7 +471,7 @@ return <>{settings?<SettingsPage
       messages={messages}
       onSave={text=>void saveAnswer(text)}
       context={selected&&<p className="project-context-note">{prefs.permission==='full'?t.projectContextNoticeFull:t.projectContextNotice}{originalPath&&<><br/>{t.originalProjectPath}{originalPath}</>}</p>}
-      onOpenToolFile={current?path=>{void openFile({name:path.split('/').at(-1)!,path,kind:'file'})}:undefined}
+      onOpenToolFile={path=>{void openDocumentLink(path)}}
       onOpenAttachment={ref=>void openAttachment(ref)}
       onPreviewHtml={(content,name)=>openDocumentTab({path:`html:${name}`,content,kind:'html',label:name,virtual:true})}
       toolCopy={{

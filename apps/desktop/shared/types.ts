@@ -97,6 +97,7 @@ export type DesktopApi = {
   renameChat(id:string,title:string):Promise<void>;
   deleteChat(id:string):Promise<void>;
   listChats():Promise<ChatSummary[]>;
+  cacheGeneratedDocument(id:string,path:string):Promise<{name:string;cache:string}>;
   openChat(id:string):Promise<{messages:ChatMessage[];projectId:string|null;modelBinding?:ChatSummary['modelBinding'];toolEvents:Extract<ChatEvent,{type:'tool'}>[]}>;
   stopChat():Promise<void>;
   clearChat():Promise<void>;

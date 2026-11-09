@@ -1,3 +1,4 @@
+import {cacheGeneratedDocument} from './generated-document';
 import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell, utilityProcess, powerMonitor } from 'electron';
 import { randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
@@ -235,6 +236,12 @@ function register(window:BrowserWindow){
   }finally{pickingAttachment=false}
  });
  // 附件缓存预览:按扩展名分发到与项目文件一致的读取器(继承 1MB 文本/10MB 图片/20MB Office 上限)
+ handle('chat:cacheGeneratedDocument',async(id:string,target:string)=>{
+  if(!isChatId(id)||id!==activeChatId||!(state.chats??[]).some(chat=>chat.id===id))throw new Error('Chat not found');
+  const manager=SessionManager.open(sessionFile(id),sessionDir,app.getPath('userData'));
+  const messages=projectChatHistory(manager.buildSessionContext().messages);
+  return cacheGeneratedDocument(target,messages,attachmentsDir);
+ });
  handle('chat:readAttachment',async(cache:string)=>{
   await attachmentCacheTarget(cache);
   const name=path.basename(cache);

@@ -10,10 +10,7 @@ import {ToolActivity,type ToolActivityCopy} from './tool-activity';
 import {isImageAttachment,AttachmentThumb} from './attachment-image';
 import type {ChatMessage,ChatAttachmentRef} from '../../shared/types';
 
-const MessageResponse=lazy(async()=>{
-  const module=await import('@/components/ai-elements/message');
-  return {default:module.MessageResponse};
-});
+const DocumentResponse=lazy(()=>import('./document-response').then(module=>({default:module.DocumentResponse})));
 
 type Copy={
   waiting:string;
@@ -130,7 +127,7 @@ function ConversationMessage({message, latest, busy, copy, toolCopy, unexecutedT
                 {block.text&&(
                   <div className="conversation-reply">
                     <Suspense fallback={<div className="conversation-text">{block.text}</div>}>
-                      <MessageResponse skipHtml disallowedElements={['img']}>{block.text}</MessageResponse>
+                      <DocumentResponse onOpenFile={onOpenToolFile}>{block.text}</DocumentResponse>
                     </Suspense>
                   </div>
                 )}
@@ -222,7 +219,7 @@ function ConversationMessage({message, latest, busy, copy, toolCopy, unexecutedT
         ) : role==='assistant' ? text&&(
           <div className="conversation-reply">
             <Suspense fallback={<div className="conversation-text">{text}</div>}>
-              <MessageResponse skipHtml disallowedElements={['img']}>{text}</MessageResponse>
+              <DocumentResponse onOpenFile={onOpenToolFile}>{text}</DocumentResponse>
             </Suspense>
           </div>
         ) : <div className={'conversation-bubble conversation-text'+(skillName?' conversation-bubble-skill':'')}>{skillName&&<span className="conversation-skill-tag"><SparklesIcon aria-hidden className="size-3.5"/>{skillName}</span>}{text}</div>}
