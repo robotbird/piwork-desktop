@@ -9,7 +9,7 @@ import type {ProjectRoot} from './project-files.ts';
 import {createSkillTools} from './skill-tools.ts';
 import {createScheduleTools,schedulingPrompt,type ScheduleCreateInput} from './schedule-tools.ts';
 import type {ChatEvent} from '../shared/types.ts';
-import {toolFailureReason} from './tool-history.ts';
+import {capToolText,sanitizeArgs,toolFailureReason,toolResultText} from './tool-history.ts';
 import {PiToRuntimeMapper} from './pi-to-runtime.ts';
 import type {RuntimeEvent} from '../src/web/lib/runtime/protocol/events.ts';
 
@@ -26,7 +26,7 @@ export class ChatSession {
  async open(input:GatewayInput,cwd:string,agentDir:string,sessionFile?:string,skillPath?:string,mcp?:McpConfig,projectRoots?:ProjectRoot[],schedule?:{requestCreate:(input:ScheduleCreateInput)=>Promise<void>}){
   const config=validateGateway(input);
   const runtime=await ModelRuntime.create({modelsPath:null,authPath:`${agentDir}/auth.json`,refreshOnCreate:false});
-  runtime.registerProvider('piwork-custom',{name:'Custom gateway',baseUrl:config.baseUrl,api:config.api??'openai-completions',apiKey:config.apiKey||'local',models:[{id:config.modelId,name:config.modelId,reasoning:false,input:config.supportsImages?['text','image']:['text'],cost:{input:0,output:0,cacheRead:0,cacheWrite:0},contextWindow:128000,maxTokens:4096}]});
+  runtime.registerProvider('piwork-custom',{name:'Custom gateway',baseUrl:config.baseUrl,api:config.api??'openai-completions',apiKey:config.apiKey||'local',models:[{id:config.modelId,name:config.modelId,reasoning:false,input:config.supportsImages?['text','image']:['text'],cost:{input:0,output:0,cacheRead:0,cacheWrite:0},contextWindow:128000,maxTokens:8192}]});
   const model=runtime.getModel('piwork-custom',config.modelId);
   if(!model)throw new Error('Model unavailable');
   // 从磁盘加载受管 agentDir(<userData>/pi)的 settings:已安装 pi 插件(pi.dev/packages)
@@ -60,11 +60,12 @@ export class ChatSession {
   this.unsubscribe=session.subscribe(event=>{
    if(this.mapper)for(const runtimeEvent of this.mapper.push(event))this.onRuntimeEvent?.(runtimeEvent);
    if(event.type==='message_update'&&event.assistantMessageEvent.type==='text_delta')this.onEvent({type:'delta',text:event.assistantMessageEvent.delta});
-   else if(event.type==='tool_execution_start')this.onEvent({type:'tool',id:event.toolCallId,name:event.toolName,status:'running',...((event.toolName.startsWith('project_')||event.toolName==='skill_read')&&typeof event.args?.path==='string'?{path:event.args.path}:{})});
+   else if(event.type==='tool_execution_start')this.onEvent({type:'tool',id:event.toolCallId,name:event.toolName,status:'running',args:sanitizeArgs(event.args),startedAt:Date.now(),...((event.toolName.startsWith('project_')||event.toolName==='skill_read')&&typeof event.args?.path==='string'?{path:event.args.path}:{})});
+   else if(event.type==='tool_execution_update'){const partial=capToolText(toolResultText(event.partialResult));this.onEvent({type:'tool',id:event.toolCallId,name:event.toolName,status:'running',...(partial?{result:partial}:{})})}
    else if(event.type==='tool_execution_end'){
-    const message=event.isError&&Array.isArray(event.result?.content)?event.result.content.map((part:{text?:unknown})=>typeof part.text==='string'?part.text:'').join(' '):'';
+    const message=capToolText(toolResultText(event.result));
     const reason=toolFailureReason(message);
-    this.onEvent({type:'tool',id:event.toolCallId,name:event.toolName,status:event.isError?'failed':'completed',...(event.isError?{reason}:{})});
+    this.onEvent({type:'tool',id:event.toolCallId,name:event.toolName,status:event.isError?'failed':'completed',...(message?{result:message}:{}),...(event.isError?{reason}:{}),...(typeof event.durationMs==='number'?{durationMs:event.durationMs}:{})});
    }
   });
  }
@@ -75,9 +76,25 @@ export class ChatSession {
   for(const runtimeEvent of this.mapper.start())this.onRuntimeEvent?.(runtimeEvent);
   try {
    await this.session.prompt(skillName?`/skill:${skillName} ${text}`:text,{expandPromptTemplates:!!skillName,images});
+   await this.resumeAfterModelError();
+   if(!this.session)throw new Error('Session closed');
    if(this.aborted){this.onEvent({type:'aborted'});for(const runtimeEvent of this.mapper.settle('aborted'))this.onRuntimeEvent?.(runtimeEvent)}
-   else {const last=this.session.messages.at(-1);if(last?.role==='assistant'&&last.stopReason==='error'){this.onEvent({type:'failed',message:'Model request failed'});for(const runtimeEvent of this.mapper.fail('Model request failed'))this.onRuntimeEvent?.(runtimeEvent)}else{this.onEvent({type:'completed',text:this.session.getLastAssistantText()??''});for(const runtimeEvent of this.mapper.settle('completed'))this.onRuntimeEvent?.(runtimeEvent)}}
-  } catch {this.onEvent(this.aborted?{type:'aborted'}:{type:'failed',message:'Model request failed'});for(const runtimeEvent of this.aborted?this.mapper.settle('aborted'):this.mapper.fail('Model request failed'))this.onRuntimeEvent?.(runtimeEvent)} finally{this.running=false}
+   else {const last=this.session.messages.at(-1);const failure=last?.role==='assistant'&&last.stopReason==='error'?last.errorMessage||'Model request failed':'';if(failure){this.onEvent({type:'failed',message:failure});for(const runtimeEvent of this.mapper.fail(failure))this.onRuntimeEvent?.(runtimeEvent)}else{this.onEvent({type:'completed',text:this.session.getLastAssistantText()??''});for(const runtimeEvent of this.mapper.settle('completed'))this.onRuntimeEvent?.(runtimeEvent)}}
+  } catch(error){const failure=error instanceof Error&&error.message?error.message:'Model request failed';this.onEvent(this.aborted?{type:'aborted'}:{type:'failed',message:failure});for(const runtimeEvent of this.aborted?this.mapper.settle('aborted'):this.mapper.fail(failure))this.onRuntimeEvent?.(runtimeEvent)} finally{this.running=false}
+ }
+ /** 瞬态模型错误(连接失败/网关抖动)不应终结整个回合——长流水线技能(如 ppt-master)几十次工具调用后断线即前功尽弃。
+  *  Pi 运行时会把失败的 assistant 响应挂起并在下一次请求中原样带回,因此等待数秒后追加一条「继续」
+  *  即可续跑同一回合。仅自动尝试一次;二次失败沿用挂起的错误响应,由 prompt() 如实上报真实原因。 */
+ private async resumeAfterModelError(){
+  if(!this.session||this.aborted)return;
+  const failed=this.session.messages.at(-1);
+  if(failed?.role!=='assistant'||failed.stopReason!=='error')return;
+  // 调用时读取以便测试经 PIWORK_MODEL_ERROR_RESUME_DELAY_MS 缩短等待
+  await new Promise(resolve=>setTimeout(resolve,Number(process.env.PIWORK_MODEL_ERROR_RESUME_DELAY_MS??8000)));
+  if(!this.session||this.aborted)return;
+  const still=this.session.messages.at(-1);
+  if(still?.role!=='assistant'||still.stopReason!=='error')return;
+  try{await this.session.prompt('继续')}catch{/* 二次异常不覆盖挂起的错误响应,由外层统一判定 */}
  }
  async abort(){if(this.running&&this.session){this.aborted=true;await this.session.abort()}}
  async close(){const session=this.session;this.session=null;this.unsubscribe?.();if(session){try{await session.extensionRunner.emit({type:'session_shutdown',reason:'quit'})}finally{session.dispose()}}}

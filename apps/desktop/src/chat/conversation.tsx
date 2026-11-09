@@ -1,4 +1,4 @@
-import {lazy, Suspense, useEffect, useState, type ReactNode} from 'react';
+import {Fragment, lazy, Suspense, useEffect, useState, type ReactNode} from 'react';
 import {ArrowDownIcon, CheckIcon, CopyIcon, DownloadIcon, FileTextIcon, SparklesIcon} from 'lucide-react';
 import {useStickToBottom} from 'use-stick-to-bottom';
 import {Button} from '@/components/ui/button';
@@ -83,10 +83,91 @@ function ConversationMessage({message, latest, busy, copy, toolCopy, unexecutedT
     return()=>clearTimeout(timeout);
   },[copyResult]);
 
-  const {role,attachmentName,attachment,toolEvents}=message;
+  const {role,attachmentName,attachment,toolEvents,segments}=message;
   /* 携带技能发送的用户消息:气泡前置 ✨ 技能名标识(浅紫高亮,对齐 Codex 参考) */
   const skillName=role==='user'?message.skillName:undefined;
   const streaming=busy&&latest;
+  /* 分段交错渲染(对齐 pi 轮次语义/ZCode 展示):text 段与工具组段按时间线交替;
+     segments 缺省(旧数据/异常兜底)走下方平铺路径 */
+  if(role==='assistant'&&segments?.length){
+    const blocks=segments.map(segment=>{
+      if(segment.kind==='tools')return {kind:'tools' as const,tools:segment.tools};
+      const separated=splitAssistantHtml(segment.text,streaming);
+      const visible=visibleAssistantText(separated.text,streaming);
+      return {kind:'text' as const,text:visible.text,html:separated.html,hiddenToolRequest:visible.hiddenToolRequest};
+    });
+    const anyText=blocks.some(block=>block.kind==='text'&&block.text);
+    const anyTools=blocks.some(block=>block.kind==='tools'&&block.tools.length>0);
+    const anyHidden=blocks.some(block=>block.kind==='text'&&block.hiddenToolRequest);
+    const htmlFiles=[...new Set(toolEvents?.flatMap(event=>
+      event.status==='completed'&&event.name==='project_write'&&event.path&&isHtmlFile(event.path)?[event.path]:[]
+    ))];
+    const totalHtml=blocks.reduce((count,block)=>count+(block.kind==='text'?block.html.length:0),0);
+    const showUnexecuted=anyHidden&&!streaming&&!anyTools;
+    const hasHtml=totalHtml>0||htmlFiles.length>0;
+    const waiting=streaming&&!anyText&&!anyTools&&!hasHtml;
+    if(!anyText&&!waiting&&!showUnexecuted&&!anyTools&&!hasHtml)return null;
+    let htmlCounter=0;
+    return (
+      <article className="conversation-message" data-role={role}>
+        <div className="conversation-message-body">
+          {htmlFiles.length>0&&(
+            <div className="conversation-html-files">
+              {htmlFiles.map(path=>(
+                <HtmlFileCard action={copy.openHtml} name={path.split('/').at(-1)??path} key={path}
+                  disabled={!onOpenToolFile} onClick={()=>onOpenToolFile?.(path)}/>
+              ))}
+            </div>
+          )}
+          {waiting&&<p className="conversation-waiting" role="status">{copy.waiting}</p>}
+          {showUnexecuted&&<p className="conversation-tool-progress">{unexecutedToolRequest}</p>}
+          {blocks.map((block,index)=>{
+            if(block.kind==='tools')return block.tools.length>0
+              ?<ToolActivity copy={toolCopy} events={block.tools} key={index} onOpenFile={onOpenToolFile}/>
+              :null;
+            return (
+              <Fragment key={index}>
+                {block.text&&(
+                  <div className="conversation-reply">
+                    <Suspense fallback={<div className="conversation-text">{block.text}</div>}>
+                      <MessageResponse skipHtml disallowedElements={['img']}>{block.text}</MessageResponse>
+                    </Suspense>
+                  </div>
+                )}
+                {block.html.map(content=>{
+                  htmlCounter+=1;
+                  const name=totalHtml===1?'piwork-answer.html':`piwork-answer-${htmlCounter}.html`;
+                  return <InlineHtmlCard content={content} copy={copy} key={name} name={name}
+                    disabled={streaming||!onPreviewHtml} saving={savingHtml}
+                    onPreview={onPreviewHtml??(()=>{})} onSave={(value,file)=>void saveHtml(value,file)}/>;
+                })}
+              </Fragment>
+            );
+          })}
+          {htmlSaveResult&&<p className="conversation-tool-progress" role="status">{htmlSaveResult}</p>}
+        </div>
+        {anyText&&!busy&&(
+          <div className="conversation-message-actions">
+            <Button
+              aria-label={copy.copy}
+              className="text-muted-foreground"
+              onClick={async()=>setCopyResult(await copyTextToClipboard(message.text)?'success':'failed')}
+              size="icon-sm"
+              title={copy.copy}
+              type="button"
+              variant="ghost"
+            >
+              {copyResult==='success'?<CheckIcon/>:<CopyIcon/>}
+            </Button>
+            {onSave&&<Button className="conversation-save" size="sm" type="button" variant="ghost" onClick={()=>onSave(message.text)}>{copy.saveAnswer}</Button>}
+            {copyResult&&<span className={copyResult==='success'?'sr-only':'text-xs text-muted-foreground'} role="status">
+              {copyResult==='success'?copy.copied:copy.copyFailed}
+            </span>}
+          </div>
+        )}
+      </article>
+    );
+  }
   const separated=role==='assistant'?splitAssistantHtml(message.text,streaming):{text:message.text,html:[]};
   const {text,hiddenToolRequest}=role==='assistant'
     ?visibleAssistantText(separated.text,streaming):{text:separated.text,hiddenToolRequest:false};

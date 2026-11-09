@@ -1,6 +1,8 @@
 export type Appearance = 'system' | 'light' | 'dark';
 export type Language = 'system' | 'zh-CN' | 'en';
-export type Preferences = {appearance: Appearance; language: Language; syncEnabled?:boolean};
+/** 工具执行确认模式(对齐 ZCode 权限档位):confirm 全部确认(默认);auto 自主(仅落盘写入确认);full 完全访问(免确认) */
+export type PermissionMode = 'confirm' | 'auto' | 'full';
+export type Preferences = {appearance: Appearance; language: Language; syncEnabled?:boolean; permission?:PermissionMode};
 /** 项目源文件夹:label 为项目内唯一短名(路径 basename 派生),main 标记主文件夹(可写、默认工作目录) */
 export type ProjectFolder = {path:string; label:string; main:boolean; available?:boolean};
 export type Project = {id:string; name:string; description?:string; folders:ProjectFolder[]; available:boolean};
@@ -12,11 +14,15 @@ export type PickedAttachment = {token:string;name:string;kind:"text"|"image";cac
 /** 对话消息可回溯的附件引用:projectPath 为项目相对路径,cachePath 为附件缓存相对路径;
     textContent 为旧版历史消息(无缓存机制)随 marker 存储的文本内容,仅文本类附件可还原 */
 export type ChatAttachmentRef = {name:string;projectPath?:string;cachePath?:string;textContent?:string};
-export type ChatMessage = {role:'user'|'assistant'; text:string; attachmentName?:string; attachment?:ChatAttachmentRef; toolEvents?:ToolEvent[]; skillName?:string};
+/** assistant 回合内按时间线交错的段:文字段与工具组段交替(pi 语义:每条 assistant 消息 = text + 其 toolCalls);
+    segments 缺省时渲染端回退到 text + toolEvents 平铺展示 */
+export type AssistantSegment = {kind:'text';text:string}|{kind:'tools';tools:ToolEvent[]};
+export type ChatMessage = {role:'user'|'assistant'; text:string; attachmentName?:string; attachment?:ChatAttachmentRef; toolEvents?:ToolEvent[]; segments?:AssistantSegment[]; skillName?:string};
 /** chat:readAttachment 的返回,kind 与渲染端 DockFile 对齐 */
 export type AttachmentPreview = {name:string;kind:'text'|'html'|'image'|'pdf'|'docx'|'xlsx'|'pptx'|'unsupported';content:string};
-export type ToolEvent = {type:'tool';id:string;name:string;status:'running'|'completed'|'failed';path?:string;reason?:'denied'|'changed'|'invalid'|'error'|'interrupted'};
-export type ChatEvent = {type:'delta';text:string}|{type:'completed';text:string}|{type:'failed';message:string}|{type:'aborted'}|{type:'approval';id:string;name:string;detail:string}|ToolEvent;
+/** args/result 为经截断清洗的展示副本(见 electron/tool-history.ts),非原始载荷 */
+export type ToolEvent = {type:'tool';id:string;name:string;status:'running'|'completed'|'failed';path?:string;reason?:'denied'|'changed'|'invalid'|'error'|'interrupted';args?:Record<string,unknown>;result?:string;durationMs?:number;startedAt?:number};
+export type ChatEvent = {type:'delta';text:string}|{type:'completed';text:string}|{type:'failed';message:string}|{type:'aborted'}|{type:'approval';id:string;name:string;detail:string;key?:string}|ToolEvent;
 /** UIMessageChunk 流(worker 经 web stream-mapping 翻译后双发;P5 渲染层切换消费) */
 export type ChatChunkMessage = {type:'chunk';chunk?:unknown;control?:'start'|'end'|'error';runId?:string;reason?:string;error?:string};
 /** worker→main:前台对话 Agent 的 create_scheduled_task 工具请求建定时任务 */
@@ -43,8 +49,11 @@ export type AppUpdateProgress={received:number;total:number};
 /** 更新状态机:idle 未检查 / upToDate 已是最新 / available 有新版 / downloading 下载中 / downloaded 已就绪 */
 export type AppUpdateState={phase:'idle'|'upToDate'|'available'|'downloading'|'downloaded';info?:AppUpdateInfo;progress?:AppUpdateProgress};
 export type LibraryEntry={path:string;parentPath:string;name:string;kind:'file'|'folder';source:'upload'|'ai'|'manual';contentType:string|null;size:number;updatedAt:number};
-/** 工具审批请求(主进程→渲染层应用内弹窗);context 为附加来源(如定时任务名) */
-export type ApprovalRequest={id:string;name:string;detail:string;context?:string};
+/** 工具审批请求(主进程→渲染层应用内弹窗);context 为附加来源(如定时任务名);
+    key 为「始终允许」的稳定标识(skill_bash 为命令全文,mcp__* 为工具名),仅执行类工具携带 */
+export type ApprovalRequest={id:string;name:string;detail:string;context?:string;key?:string};
+/** 审批答复:allow 允许一次;always 允许并记入项目级始终允许名单;deny 拒绝 */
+export type ApprovalDecision='allow'|'always'|'deny';
 export type DesktopApi = {
   listWebHistory(before?:string):Promise<{chats:WebHistoryItem[];hasMore:boolean}>;
   readWebHistory(id:string):Promise<{messages:{id:string;role:'user'|'assistant';text:string}[];omitted:boolean}>;
@@ -95,7 +104,7 @@ export type DesktopApi = {
   onChatChunks(listener:(event:ChatChunkMessage)=>void):()=>void;
   onApprovalRequest(listener:(request:ApprovalRequest)=>void):()=>void;
   onApprovalClosed(listener:(id:string)=>void):()=>void;
-  respondApproval(id:string,allowed:boolean):Promise<void>;
+  respondApproval(id:string,decision:ApprovalDecision):Promise<void>;
   onBrowserOpen(listener:(url:string)=>void):()=>void;
   openExternalUrl(url:string):Promise<void>;
   getGateway():Promise<GatewayConfig | null>;

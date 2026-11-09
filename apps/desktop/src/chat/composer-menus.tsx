@@ -1,6 +1,7 @@
 import {useRef, useState} from 'react';
 import {
-  CheckIcon, ChevronDownIcon, CpuIcon, FolderIcon, LibraryBigIcon, PaperclipIcon, PlusIcon,
+  CheckIcon, ChevronDownIcon, CpuIcon, FolderIcon, HandIcon, LibraryBigIcon, PaperclipIcon,
+  PlusIcon, ShieldCheckIcon, ZapIcon,
 } from 'lucide-react';
 import {Button} from '@/components/ui/button';
 import {
@@ -11,9 +12,14 @@ import {DropdownMenu as DropdownMenuPrimitive} from 'radix-ui';
 import {Popover, PopoverContent, PopoverTrigger} from '@/components/ui/popover';
 import {cn} from '@/lib/utils';
 import enMessages from '@/i18n/messages/en.json';
+import type {PermissionMode} from '../../shared/types';
 
 type Copy = typeof enMessages.chat;
 type Model = {value:string;name:string;providerKey?:string};
+export type PermissionMenuCopy={
+  label:string;
+  modes:{value:PermissionMode;title:string;hint:string}[];
+};
 
 const providerIcons = import.meta.glob<string>('../brand/images/model-providers/*.svg', {
   eager: true, query: '?url', import: 'default',
@@ -47,6 +53,73 @@ export function AttachmentsMenu({copy, disabled, onComputer, onLibrary}: {
           <span>{copy.pickDocuments}</span>
           <span className="text-muted-foreground">{copy.browseDocuments}</span>
         </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+/* 工具权限模式下拉(对齐 ZCode 权限选择器):pill 触发器显示当前档位,菜单项为图标+标题+副标题两行 */
+const permissionIcons={confirm:HandIcon,auto:ShieldCheckIcon,full:ZapIcon} as const;
+
+export function ComposerPermissionMenu({copy, disabled, value, onChange, onFocusInput}: {
+  copy:PermissionMenuCopy; disabled?:boolean; value:PermissionMode;
+  onChange:(mode:PermissionMode)=>void; onFocusInput:()=>void;
+}) {
+  const focusInputOnClose=useRef(false);
+  const selected=copy.modes.find(mode=>mode.value===value)??copy.modes[0]!;
+  const SelectedIcon=permissionIcons[selected.value];
+  return (
+    <DropdownMenu modal={false}>
+      <DropdownMenuTrigger asChild>
+        <Button
+          aria-label={`${copy.label}: ${selected.title}`}
+          className="h-8 max-w-[150px] gap-1.5 rounded-full border-0 bg-muted px-3 text-[13px] font-normal text-foreground shadow-none hover:bg-secondary aria-expanded:bg-muted focus-visible:bg-muted dark:bg-transparent dark:hover:bg-white/5 dark:aria-expanded:bg-transparent"
+          disabled={disabled}
+          title={selected.title}
+          type="button"
+          variant="ghost"
+        >
+          <SelectedIcon aria-hidden="true" className="size-[15px] shrink-0"/>
+          <span className="min-w-0 flex-1 truncate text-left">{selected.title}</span>
+          <ChevronDownIcon className="size-[13px] shrink-0 text-muted-foreground"/>
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="start"
+        aria-label={copy.label}
+        className="w-[min(300px,calc(100vw-2rem))] rounded-2xl border-border/60 bg-card/95 p-2.5 shadow-[var(--shadow-float)] backdrop-blur-xl"
+        onCloseAutoFocus={event=>{
+          if (!focusInputOnClose.current) return;
+          focusInputOnClose.current=false;
+          event.preventDefault();
+          onFocusInput();
+        }}
+        side="top"
+        sideOffset={8}
+      >
+        <DropdownMenuRadioGroup onValueChange={next=>onChange(next as PermissionMode)} value={value}>
+          {copy.modes.map(mode=>{
+            const Icon=permissionIcons[mode.value];
+            return (
+              <DropdownMenuPrimitive.RadioItem
+                className="flex w-full items-start gap-2.5 rounded-lg px-3 py-2.5 text-[13px] outline-none data-[highlighted]:bg-muted data-[state=checked]:bg-muted"
+                key={mode.value}
+                onSelect={()=>{focusInputOnClose.current=true}}
+                textValue={mode.title}
+                value={mode.value}
+              >
+                <Icon aria-hidden="true" className="mt-0.5 size-4 shrink-0"/>
+                <span className="flex min-w-0 flex-1 flex-col gap-0.5 text-left">
+                  <span className="font-medium">{mode.title}</span>
+                  <span className="text-muted-foreground">{mode.hint}</span>
+                </span>
+                <DropdownMenuPrimitive.ItemIndicator>
+                  <CheckIcon aria-hidden="true" className="mt-0.5 size-4"/>
+                </DropdownMenuPrimitive.ItemIndicator>
+              </DropdownMenuPrimitive.RadioItem>
+            );
+          })}
+        </DropdownMenuRadioGroup>
       </DropdownMenuContent>
     </DropdownMenu>
   );

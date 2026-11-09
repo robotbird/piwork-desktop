@@ -563,19 +563,132 @@ button.conversation-attachment:hover { background: var(--secondary); color: var(
 }
 .conversation-tool-trigger:hover { background: var(--muted); }
 .conversation-tool-trigger > svg:last-child { margin-left: auto; }
+/* 工具行(参考 pi 状态色调:执行中灰、成功绿、失败红,弱化为左侧色条+浅底) */
+.conversation-tool-listbar {
+  display: flex;
+  justify-content: flex-end;
+  padding: 6px 12px 0;
+  border-top: 1px solid var(--border);
+}
+.conversation-tool-toggle-all {
+  padding: 2px 6px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  font-size: 12px;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+.conversation-tool-toggle-all:hover { color: var(--foreground); background: var(--muted); }
 .conversation-tool-list {
   display: grid;
-  gap: 6px;
-  padding: 8px 12px;
-  border-top: 1px solid var(--border);
+  gap: 4px;
+  padding: 8px 12px 10px 18px;
   font-size: 13px;
+  position: relative;
 }
-.conversation-tool-list li {
+/* ZCode 式子项树形 gutter:子行左侧的竖向连接线 */
+.conversation-tool-list::before {
+  content: '';
+  position: absolute;
+  left: 13px;
+  top: 14px;
+  bottom: 12px;
+  width: 1px;
+  background: var(--border);
+}
+.conversation-tool-item {
+  border-radius: 6px;
+  overflow: hidden;
+}
+.conversation-tool-item[data-status="running"] {
+  background: color-mix(in srgb, var(--muted-foreground) 6%, transparent);
+  box-shadow: inset 2px 0 0 var(--muted-foreground);
+}
+.conversation-tool-item[data-status="completed"] { box-shadow: inset 2px 0 0 #10b981; }
+.conversation-tool-item[data-status="failed"] {
+  background: color-mix(in srgb, var(--destructive) 6%, transparent);
+  box-shadow: inset 2px 0 0 var(--destructive);
+}
+.conversation-tool-item-trigger {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 4px 8px;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--foreground);
+  text-align: left;
+  cursor: pointer;
 }
+.conversation-tool-item-trigger:hover { background: color-mix(in srgb, var(--muted-foreground) 8%, transparent); }
+.conversation-tool-name { flex: none; }
+.conversation-tool-summary {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+.conversation-tool-duration {
+  flex: none;
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+.conversation-tool-summary + .conversation-tool-duration { margin-left: 0; }
+.conversation-tool-detail {
+  display: grid;
+  gap: 10px;
+  padding: 6px 10px 10px;
+  border-top: 1px dashed var(--border);
+}
+.conversation-tool-io-label {
+  margin: 0 0 4px;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: var(--muted-foreground);
+}
+.conversation-tool-code {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--muted);
+  max-height: 320px;
+  overflow-y: auto;
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.conversation-tool-code[data-failed] { color: var(--destructive); }
+.conversation-tool-args { display: grid; gap: 6px; margin: 0; }
+.conversation-tool-arg { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0 10px; align-items: start; }
+.conversation-tool-arg dt {
+  padding: 8px 0;
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+.conversation-tool-arg dd { margin: 0; min-width: 0; }
+.conversation-tool-more {
+  padding: 4px 0 0;
+  border: 0;
+  background: none;
+  font-size: 12px;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  text-align: left;
+}
+.conversation-tool-more:hover { color: var(--foreground); text-decoration: underline; }
 .conversation-disclaimer {
   margin: 0 0 8px;
   color: color-mix(in srgb, var(--muted-foreground) 70%, transparent);

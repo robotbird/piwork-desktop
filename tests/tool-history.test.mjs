@@ -1,10 +1,16 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {extractToolActivity,toolFailureReason} from '../apps/desktop/electron/tool-history.ts';
-test('restores tool names, paths and outcomes from the persisted Pi message sequence',()=>{
- const events=extractToolActivity([{role:'assistant',content:[{type:'toolCall',id:'1',name:'project_write',arguments:{path:'result.md',content:'private'}}]},{role:'toolResult',toolCallId:'1',isError:true,content:[{type:'text',text:'File write not approved'}]},{role:'assistant',content:[{type:'toolCall',id:'2',name:'project_read',arguments:{path:'notes.md'}}]},{role:'toolResult',toolCallId:'2',isError:false,content:[{type:'text',text:'private file contents'}]}]);assert.deepEqual(events,[{type:'tool',id:'1',name:'project_write',path:'result.md',status:'failed',reason:'denied'},{type:'tool',id:'2',name:'project_read',path:'notes.md',status:'completed',reason:undefined}]);assert.doesNotMatch(JSON.stringify(events),/private/);assert.equal(toolFailureReason('File changed while writing'),'changed');
+import {projectChatHistory,toolFailureReason} from '../apps/desktop/electron/tool-history.ts';
+test('restores tool names, paths, outcomes and display copies from the persisted Pi message sequence',()=>{
+ const history=projectChatHistory([{role:'user',content:'go'},{role:'assistant',content:[{type:'toolCall',id:'1',name:'project_write',arguments:{path:'result.md',content:'private'}}]},{role:'toolResult',toolCallId:'1',isError:true,content:[{type:'text',text:'File write not approved'}]},{role:'assistant',content:[{type:'toolCall',id:'2',name:'project_read',arguments:{path:'notes.md'}}]},{role:'toolResult',toolCallId:'2',isError:false,content:[{type:'text',text:'private file contents'}]}]);
+ const events=history[1].toolEvents;
+ assert.deepEqual(events.map(event=>({type:event.type,id:event.id,name:event.name,path:event.path,status:event.status,reason:event.reason})),[{type:'tool',id:'1',name:'project_write',path:'result.md',status:'failed',reason:'denied'},{type:'tool',id:'2',name:'project_read',path:'notes.md',status:'completed',reason:undefined}]);
+ /* 工具过程按用户要求可见:入参以展示副本携带(长内容截断),输出文本可展开查看 */
+ assert.equal(events[0].args.content,'private');
+ assert.equal(events[1].result,'private file contents');
+ assert.equal(toolFailureReason('File changed while writing'),'changed');
 });
 
-test('projects tool results into the right assistant turns without exposing raw arguments',async()=>{
+test('projects tool results into the right assistant turns as interleaved text/tool segments',async()=>{
  const {projectChatHistory}=await import('../apps/desktop/electron/tool-history.ts');
  const history=projectChatHistory([
   {role:'user',content:'First'},
@@ -16,9 +22,12 @@ test('projects tool results into the right assistant turns without exposing raw 
  ]);
  assert.equal(history.length,4);
  assert.equal(history[1].text,'I will check\n\nChecked');
+ /* 分段保持 pi 轮次顺序:text → tools → text,工具结果按 id 回填 */
+ assert.deepEqual(history[1].segments.map(segment=>segment.kind),['text','tools','text']);
+ assert.deepEqual(history[1].segments.map(segment=>segment.kind==='text'?segment.text:segment.tools.map(event=>event.id)),['I will check',['1'],'Checked']);
  assert.deepEqual(history[1].toolEvents.map(event=>[event.id,event.status]),[['1','completed']]);
  assert.deepEqual(history[3].toolEvents.map(event=>[event.id,event.reason]),[['2','interrupted']]);
- assert.doesNotMatch(JSON.stringify(history),/private/);
+ assert.equal(history[1].toolEvents[0].result,'private');
 });
 
 test('hides only protocol tool blocks and incomplete streaming fragments outside fenced code',async()=>{
