@@ -44,9 +44,10 @@ export function sanitizeArgs(args:unknown):Record<string,unknown>|undefined{
 type SessionMessage=AgentSession['messages'][number];
 
 /** Keep tool results with the assistant turn that initiated them. */
-export function projectChatHistory(messages:readonly SessionMessage[]):ChatMessage[]{
+export function projectChatHistory(messages:readonly SessionMessage[],timings:ReadonlyMap<number,{startedAt:number;durationMs:number}>=new Map()):ChatMessage[]{
  const history:ChatMessage[]=[];
  let turn:SessionMessage[]=[];
+ let timing:{startedAt:number;durationMs:number}|undefined;
  function appendText(segments:AssistantSegment[],text:string){
   if(!text)return;
   const last=segments.at(-1);
@@ -82,12 +83,13 @@ export function projectChatHistory(messages:readonly SessionMessage[]):ChatMessa
   }
   const text=segments.filter(segment=>segment.kind==='text').map(segment=>segment.text).join('\n\n');
   const toolEvents=segments.flatMap(segment=>segment.kind==='tools'?segment.tools:[]);
-  if(text||toolEvents.length)history.push({role:'assistant',text,...(toolEvents.length?{toolEvents,segments}:{})});
+  if(text||toolEvents.length)history.push({role:'assistant',text,...timing,...(toolEvents.length?{toolEvents,segments}:{})});
   turn=[];
  }
  for(const message of messages){
   if(message.role==='user'){
    flushTurn();
+   timing=timings.get(message.timestamp);
    const raw=typeof message.content==='string'?message.content:message.content.filter(part=>part.type==='text').map(part=>part.text).join('');
    /* pi 把 /skill:NAME 展开成 <skill name="...">...</skill>\n\n 前缀块:提取技能名驱动气泡标识;
       兼容未展开、直接存 /skill:NAME 前缀的旧格式 */

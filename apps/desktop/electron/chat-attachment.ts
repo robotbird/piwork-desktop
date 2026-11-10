@@ -1,6 +1,6 @@
 import path from 'node:path';
 import type {ImageContent} from '@earendil-works/pi-ai';
-import type {ChatAttachmentRef} from '../shared/types.ts';
+import type {ChatMessageAttachment} from '../shared/types.ts';
 import {readBoundedText,readProjectImage,readProjectText,splitProjectPath,type ProjectRoot} from './project-files.ts';
 import {readDocumentText} from './file-text.ts';
 
@@ -42,12 +42,19 @@ export function addPickedAttachment(text:string,name:string,attachment:PickedAtt
 }
 
 
-export function splitChatAttachment(text:string):{text:string;attachmentName?:string;attachment?:ChatAttachmentRef}{
- for(const marker of [PICKED_FILE_MARKER,PROJECT_FILE_MARKER]){
-  const index=text.lastIndexOf(marker);
-  if(index<0)continue;
+export function splitChatAttachment(text:string):{text:string;attachments?:ChatMessageAttachment[]}{
+ const attachments:ChatMessageAttachment[]=[];
+ let rest=text;
+ for(;;){
+  // 从尾部逐个剥离 marker:多附件按发送顺序追加,先剥最后一个;单附件旧消息等价(取两种 marker 的最晚出现处)
+  let marker='';let index=-1;
+  for(const candidate of [PICKED_FILE_MARKER,PROJECT_FILE_MARKER]){
+   const at=rest.lastIndexOf(candidate);
+   if(at>index){index=at;marker=candidate}
+  }
+  if(index<0)break;
   try{
-   const attachment=JSON.parse(text.slice(index+marker.length));
+   const attachment=JSON.parse(rest.slice(index+marker.length));
    const name=marker===PROJECT_FILE_MARKER?attachment?.path:attachment?.name;
    if(typeof name==='string'&&name&&
       (typeof attachment.content==='string'||(marker===PICKED_FILE_MARKER&&(Object.keys(attachment).length===1||typeof attachment.cache==='string')))){
@@ -55,11 +62,14 @@ export function splitChatAttachment(text:string):{text:string;attachmentName?:st
     const cachePath=marker===PICKED_FILE_MARKER&&typeof attachment.cache==='string'&&attachment.cache?attachment.cache:undefined;
     // 旧版历史消息没有缓存副本:文本附件至少能用 marker 里存的内容做纯文本预览
     const textContent=marker===PICKED_FILE_MARKER&&!cachePath&&typeof attachment.content==='string'&&attachment.content?attachment.content:undefined;
-    return {text:text.slice(0,index),attachmentName:path.basename(name),attachment:{name:path.basename(name),...(projectPath?{projectPath}:{}),...(cachePath?{cachePath}:{}),...(textContent?{textContent}:{})}};
+    attachments.unshift({name:path.basename(name),ref:{name:path.basename(name),...(projectPath?{projectPath}:{}),...(cachePath?{cachePath}:{}),...(textContent?{textContent}:{})}});
+    rest=rest.slice(0,index);
+    continue;
    }
   }catch{
    // Preserve messages whose text only resembles an attachment marker.
   }
+  break;
  }
- return {text};
+ return attachments.length?{text:rest,attachments}:{text};
 }

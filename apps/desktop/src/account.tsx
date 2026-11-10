@@ -4,15 +4,14 @@ import {Button} from '@/components/ui/button';
 import {Input} from '@/components/ui/input';
 import {Label} from '@/components/ui/label';
 import type {AccountStatus} from '../shared/types';
-const messages={
- 'zh-CN':{title:'PiWork 账号',address:'PiWork 服务地址',login:'打开登录',refresh:'刷新账号状态',logout:'退出登录',signedOut:'未登录',models:'账号可用模型',none:'暂无可用模型',pending:'可在对话输入框选择账号模型或自定义网关。',history:'查看 Web 对话',error:'无法连接或读取账号状态，请检查服务地址及网络。',logoutError:'退出失败，请检查网络后重试。',hint:'使用 HTTPS 地址；本机测试可使用 HTTP。登录完成后返回此窗口刷新状态。'},
- en:{title:'PiWork account',address:'PiWork server URL',login:'Open login',refresh:'Refresh account',logout:'Sign out',signedOut:'Signed out',models:'Available account models',none:'No models available',pending:'Choose an account model or custom gateway in the chat composer.',history:'View Web conversations',error:'Unable to connect or read account status. Check the server URL and network.',logoutError:'Sign out failed. Check the network and try again.',hint:'Use an HTTPS URL; HTTP is allowed for local testing. Return here and refresh after signing in.'}
-} as const;
+import zh from '@/i18n/messages/zh.json';
+import en from '@/i18n/messages/en.json';
+const messages={'zh-CN':zh.desktopAccount,en:en.desktopAccount} as const;
 export function Account({language,onChanged,onOpenHistory}:{language:'zh-CN'|'en';onChanged:(status:AccountStatus|null)=>void;onOpenHistory:()=>void}){
- const t=messages[language];const [baseUrl,setBaseUrl]=useState('');const [status,setStatus]=useState<AccountStatus|null>(null);const [error,setError]=useState('');const [busy,setBusy]=useState(false);
- async function refresh(){setBusy(true);try{const value=await window.desktop.accountStatus();setStatus(value);onChanged(value);if(value.baseUrl)setBaseUrl(value.baseUrl);setError('')}catch{setStatus(null);onChanged(null);setError(t.error)}finally{setBusy(false)}}
- useEffect(()=>{void refresh()},[]);
- async function login(e:React.FormEvent){e.preventDefault();setBusy(true);try{await window.desktop.accountLogin(baseUrl);setStatus(null);onChanged(null);setError('')}catch{setError(t.error)}finally{setBusy(false)}}
+ const t=messages[language];const [baseUrl,setBaseUrl]=useState('https://piwork.net');const [status,setStatus]=useState<AccountStatus|null>(null);const [error,setError]=useState('');const [busy,setBusy]=useState(false);
+ async function refresh(){setBusy(true);try{const value=await window.desktop.accountStatus();setStatus(value);onChanged(value);if(value.loginServer??value.baseUrl)setBaseUrl((value.loginServer??value.baseUrl)!);setError(value.loginFailed?t.loginFailed:'')}catch{setStatus(null);onChanged(null);setError(t.error)}finally{setBusy(false)}}
+ useEffect(()=>{void refresh();return window.desktop.onAccountChanged(()=>void refresh())},[]);
+ async function login(e:React.FormEvent){e.preventDefault();setBusy(true);try{await window.desktop.accountLogin(baseUrl);await refresh()}catch{setError(t.error)}finally{setBusy(false)}}
  async function logout(){setBusy(true);try{await window.desktop.accountLogout();await refresh()}catch{setError(t.logoutError)}finally{setBusy(false)}}
  const userLabel=status?.user?(status.user.name||status.user.email||status.user.id):t.signedOut;
  return <section className="overflow-hidden rounded-[14px] border border-border bg-card">
@@ -27,6 +26,7 @@ export function Account({language,onChanged,onOpenHistory}:{language:'zh-CN'|'en
     <Label htmlFor="piwork-server-url">{t.address}</Label>
     <Input id="piwork-server-url" onChange={e=>setBaseUrl(e.target.value)} placeholder="https://piwork.example" required type="url" value={baseUrl}/>
     <p className="text-[13px] leading-5 text-muted-foreground">{t.hint}</p>
+    {status?.loginPending&&<p className="text-[13px] leading-5 text-muted-foreground" role="status">{t.waiting}</p>}
     <div className="mt-1 flex flex-wrap gap-2">
      <Button disabled={busy} size="sm" type="submit">{t.login}</Button>
      <Button disabled={busy} onClick={()=>void refresh()} size="sm" type="button" variant="outline">{t.refresh}</Button>

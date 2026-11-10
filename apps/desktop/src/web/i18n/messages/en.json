@@ -1,4 +1,13 @@
 {
+  "generatedFiles": {
+    "preview": "Preview",
+    "open": "Open with default app",
+    "reveal": "Show in Finder",
+    "copyPath": "Copy path",
+    "more": "More file actions",
+    "copied": "Path copied",
+    "copyFailed": "Could not copy path"
+  },
   "appSidebar": {
     "myDocuments": "My documents",
     "scheduledTasks": "Scheduled tasks",
@@ -1405,6 +1414,10 @@
     "uploadSettingsUnavailable": "Upload limits are temporarily unavailable. Please try again."
   },
   "reasoning": {
+    "processing": "Working… {duration}",
+    "processed": "Worked for {duration}",
+    "processLabel": "Processing steps",
+    "stepLabel": "Step {number}",
     "thinking": "Thinking…",
     "thinkingWithDuration": "Thinking… {duration}",
     "thoughtBriefly": "Thought for a few seconds",
@@ -1982,5 +1995,22 @@
     "previous": "Previous",
     "next": "Next",
     "page": "Page {page} of {pages}"
+  },
+  "desktopAccount": {
+    "title": "PiWork account",
+    "address": "PiWork server URL",
+    "login": "Sign in with browser",
+    "refresh": "Refresh account",
+    "logout": "Sign out",
+    "signedOut": "Signed out",
+    "models": "Available account models",
+    "none": "No models available",
+    "pending": "Choose an account model or custom gateway in the chat composer.",
+    "history": "View Web conversations",
+    "error": "Unable to connect or read account status. Check the server URL and network.",
+    "logoutError": "Sign out failed. Check the network and try again.",
+    "hint": "Sign-in opens in your default browser. Allow the browser to open PiWork when finished; your account will update automatically.",
+    "waiting": "Waiting for browser sign-in. Click sign in to start again.",
+    "loginFailed": "Sign-in failed or expired. Start again. If a task is running, wait for it to finish before retrying."
   }
 }

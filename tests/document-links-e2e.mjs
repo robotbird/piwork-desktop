@@ -30,6 +30,23 @@ try{
   console.log('Sent request');
   const links=page.locator('.conversation-document-link');await links.first().waitFor({timeout:20000});
   assert.equal(await links.count(),7);
+  const cards=page.locator('.generated-file');
+  await cards.first().waitFor();assert.equal(await cards.count(),6);
+  assert.equal(await cards.first().evaluate(node=>{const reply=node.closest('.conversation-message-body').querySelector('.conversation-reply');return Boolean(reply.compareDocumentPosition(node)&Node.DOCUMENT_POSITION_FOLLOWING)}),true);
+  const first=cards.filter({hasText:'技术 报告.pdf'});
+  await first.hover();
+  await page.waitForFunction(node=>getComputedStyle(node).opacity==='1',await first.locator('.generated-file-actions').elementHandle());
+  await app.evaluate(({shell})=>{globalThis.fileActions=[];shell.openPath=async target=>{globalThis.fileActions.push(['open',target]);return ''};shell.showItemInFolder=target=>globalThis.fileActions.push(['reveal',target])});
+  await first.getByRole('button',{name:'Open with default app',exact:true}).click();
+  await first.click({button:'right'});
+  await page.getByRole('menuitem',{name:'Show in Finder',exact:true}).click();
+  await first.click({button:'right'});
+  await page.getByRole('menuitem',{name:'Copy path',exact:true}).click();
+  await first.click({button:'right'});
+  await page.getByRole('menuitem',{name:'Preview',exact:true}).click();
+  await page.locator('.dock-body:not([hidden]) .pdf-preview').waitFor();
+  assert.deepEqual((await app.evaluate(()=>globalThis.fileActions)).map(item=>item[0]),['open','reveal']);
+
   assert.equal(await links.first().evaluate(node=>getComputedStyle(node).fontWeight),'700');
   assert.equal(await page.locator('pre .conversation-document-link').count(),0);
   assert.equal(await page.getByRole('link',{name:'External',exact:true}).getAttribute('href'),'https://example.com/report.pdf');
@@ -66,6 +83,12 @@ try{
     await body.locator(selector).waitFor({timeout:15000});
     assert.equal(await body.locator('.error').count(),0);
   }
+  const historyCard=page.locator('.generated-file').filter({hasText:'技术 报告.pptx'});
+  await historyCard.click({button:'right'});await page.getByRole('menuitem',{name:'Open with default app',exact:true}).click();
+  await historyCard.click({button:'right'});await page.getByRole('menuitem',{name:'Show in Finder',exact:true}).click();
+  const actions=await app.evaluate(()=>globalThis.fileActions);
+  assert.deepEqual(actions.slice(-2),[['open',path.join(folder,'技术 报告.pptx')],['reveal',path.join(folder,'技术 报告.pptx')]]);
+  await page.screenshot({path:'.visual-tmp/generated-file-cards.png'});
   // Only references from the active chat can be resolved, never an arbitrary renderer path.
   const chats=await page.evaluate(()=>window.desktop.listChats());
   const chat=chats.find(chat=>chat.title==='Historical output preview');assert.equal(chat.projectId,null);

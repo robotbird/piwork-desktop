@@ -30,3 +30,15 @@ test('absolute paths resolve only within authorized project folders',()=>{
   assert.equal(projectDocumentPath('/Users/me/work-other/report.pdf',folders),undefined);
   assert.equal(projectDocumentPath('reports/report.pdf',folders),'reports/report.pdf');
 });
+
+test('reply file cards deduplicate references and omit fenced examples and remote URLs',async()=>{
+  const {documentReferences}=await import('../apps/desktop/src/chat/file-links.ts');
+  const text='Report: `/Users/me/技术 报告.xlsx`\n\n[Again](</Users/me/技术 报告.xlsx>)\n\n[Word](reports/final.docx)\n\n[Remote](https://example.com/remote.pdf)\n\n```sh\ncat /tmp/example.pdf\n```\n\nPlain: reports/notes.md';
+  assert.deepEqual(documentReferences(text),['/Users/me/技术 报告.xlsx','reports/final.docx','reports/notes.md']);
+});
+
+test('file cards merge project and absolute references without merging different directories',async()=>{
+  const {uniqueDocumentPaths}=await import('../apps/desktop/src/chat/file-links.ts');
+  const folders=[{path:'/Users/me/project',label:'Project',main:true}];
+  assert.deepEqual(uniqueDocumentPaths(['report.pdf','Project/report.pdf','/Users/me/project/report.pdf','other/report.pdf'],folders),['report.pdf','other/report.pdf']);
+});

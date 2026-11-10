@@ -116,6 +116,17 @@ function imageSignature(bytes: Buffer, mime: string): boolean {
   if (mime === 'image/webp') return bytes.length >= 12 && bytes.subarray(0,4).toString('ascii') === 'RIFF' && bytes.subarray(8,12).toString('ascii') === 'WEBP';
   return false;
 }
+/** mime → 扩展名(IMAGE_TYPES 反向映射),供剪贴板图片生成缓存文件名 */
+export function imageExtension(mime: string): '.png'|'.jpg'|'.gif'|'.webp'|null {
+  for (const [ext, type] of Object.entries(IMAGE_TYPES)) if (type === mime) return ext as '.png'|'.jpg'|'.gif'|'.webp';
+  return null;
+}
+/** 字节级图片校验(粘贴等无路径来源):上限与魔数签名与 readProjectImage 一致 */
+export function verifyImageBytes(bytes: Buffer, mime: string): void {
+  if (!Object.values(IMAGE_TYPES).includes(mime)) throw new Error('Unsupported image type');
+  if (bytes.length > MAX_IMAGE_BYTES) throw new Error('Image too large');
+  if (!imageSignature(bytes, mime)) throw new Error('Invalid image');
+}
 export async function readProjectImage(root:string, relative:string): Promise<{mime:string;base64:string}> {
   const mime = IMAGE_TYPES[path.extname(relative).toLowerCase()];
   if (!mime) throw new Error('Unsupported image type');

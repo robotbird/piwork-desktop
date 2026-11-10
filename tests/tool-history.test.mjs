@@ -53,3 +53,17 @@ test('extracts HTML deliverables while leaving Markdown and ordinary code intact
  assert.deepEqual(splitAssistantHtml('~~~html\n<div>file</div>\n~~~'),{text:'',html:['<div>file</div>']});
  assert.equal(splitAssistantHtml('Intro\n<!doc',true).text.trim(),'Intro');
 });
+
+test('restores whole-turn timing by user timestamp without inventing timing for old turns',()=>{
+ const messages=[
+  {role:'user',timestamp:100,content:'First'},
+  {role:'assistant',content:[{type:'text',text:'First answer'}]},
+  {role:'user',timestamp:200,content:'Second'},
+  {role:'assistant',content:[{type:'text',text:'Second answer'}]},
+ ];
+ const history=projectChatHistory(messages,new Map([[100,{startedAt:90,durationMs:4500}]]));
+ assert.equal(history[1].startedAt,90);
+ assert.equal(history[1].durationMs,4500);
+ assert.equal(history[3].startedAt,undefined);
+ assert.equal(history[3].durationMs,undefined);
+});

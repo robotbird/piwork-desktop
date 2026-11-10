@@ -14,10 +14,12 @@ export type PickedAttachment = {token:string;name:string;kind:"text"|"image";cac
 /** 对话消息可回溯的附件引用:projectPath 为项目相对路径,cachePath 为附件缓存相对路径;
     textContent 为旧版历史消息(无缓存机制)随 marker 存储的文本内容,仅文本类附件可还原 */
 export type ChatAttachmentRef = {name:string;projectPath?:string;cachePath?:string;textContent?:string};
+/** 用户消息的单个附件:ref 缺省时(如旧历史无缓存副本的图片)仅按 name 展示 */
+export type ChatMessageAttachment = {name:string;ref?:ChatAttachmentRef};
 /** assistant 回合内按时间线交错的段:文字段与工具组段交替(pi 语义:每条 assistant 消息 = text + 其 toolCalls);
     segments 缺省时渲染端回退到 text + toolEvents 平铺展示 */
 export type AssistantSegment = {kind:'text';text:string}|{kind:'tools';tools:ToolEvent[]};
-export type ChatMessage = {role:'user'|'assistant'; text:string; attachmentName?:string; attachment?:ChatAttachmentRef; toolEvents?:ToolEvent[]; segments?:AssistantSegment[]; skillName?:string};
+export type ChatMessage = {role:'user'|'assistant'; text:string; startedAt?:number; durationMs?:number; attachments?:ChatMessageAttachment[]; toolEvents?:ToolEvent[]; segments?:AssistantSegment[]; skillName?:string};
 /** chat:readAttachment 的返回,kind 与渲染端 DockFile 对齐 */
 export type AttachmentPreview = {name:string;kind:'text'|'html'|'image'|'pdf'|'docx'|'xlsx'|'pptx'|'unsupported';content:string};
 /** args/result 为经截断清洗的展示副本(见 electron/tool-history.ts),非原始载荷 */
@@ -41,7 +43,7 @@ export type PiCatalogItem={name:string;version:string;description:string;publish
 export type PiCatalogResult={items:PiCatalogItem[];total:number};
 /** 已安装的 pi 插件;安装源 npm:<name>[@<version>],落盘于 <userData>/pi(与 pi CLI pi install 同布局) */
 export type InstalledPiPackage={source:string;name:string;version:string;description:string;resources:{extensions:number;skills:number;prompts:number;themes:number}};
-export type AccountStatus={baseUrl:string|null;user:{id:string;name:string|null;email:string|null}|null;defaultModelId?:string;models:{id:string;name:string;providerKey?:string;supportsImages?:boolean}[]};
+export type AccountStatus={loginServer?:string;loginPending?:boolean;loginFailed?:boolean;baseUrl:string|null;user:{id:string;name:string|null;email:string|null}|null;defaultModelId?:string;models:{id:string;name:string;providerKey?:string;supportsImages?:boolean}[]};
 export type WebHistoryItem={id:string;title:string;createdAt:string;shared:boolean};
 /** 客户端更新信息(来自 GitHub Releases latest);sha256 取资产 digest,缺失为空(仅 size 校验) */
 export type AppUpdateInfo={version:string;notes:string;assetName:string;downloadUrl:string;size:number;sha256:string};
@@ -61,6 +63,7 @@ export type DesktopApi = {
   openWebHistory(id:string):Promise<void>;
   accountStatus():Promise<AccountStatus>;
   accountLogin(baseUrl:string):Promise<void>;
+  onAccountChanged(listener:()=>void):()=>void;
   accountLogout():Promise<void>;
   listMcp():Promise<McpServer[]>;
   testMcp(id:string):Promise<{ok:true;tools:{name:string;description:string}[]}|{ok:false;reason:'unavailable'|'timeout'}>;
@@ -89,14 +92,20 @@ export type DesktopApi = {
   deleteSchedule(id:string):Promise<void>;
   runSchedule(id:string):Promise<void>;
   pickChatAttachment(file?:{projectId:string;path:string}|{library:string}):Promise<PickedAttachment|null>;
+  /** 粘贴的剪贴板内容:带 path 的条目为 Finder 拷贝的文件(任意类型),base64 条目为剪贴板图片字节;
+      全部成功才写入附件缓存(任一失败整批放弃),返回值与 pick-attachment 一样占用多附件槽位 */
+  attachFiles(items:({path:string}|{name:string;mimeType:string;base64:string})[]):Promise<PickedAttachment[]>;
+  /** 输入框移除附件 chip:释放主进程为对应 token 持有的读取内容 */
+  detachAttachments(tokens:string[]):Promise<void>;
   /** 读取附件缓存副本并按扩展名给出可直接进 dock 的预览内容 */
   readAttachment(cache:string):Promise<AttachmentPreview>;
   openAttachmentExternal(cache:string):Promise<void>;
   revealAttachment(cache:string):Promise<void>;
-  sendChat(text:string, projectId:string|null,skillId:string|null,mcpId:string|null,attachment:string|{token:string}|null,model?:{source:'account'|'custom';id:string}):Promise<string>;
+  sendChat(text:string, projectId:string|null,skillId:string|null,mcpId:string|null,attachments:(string|{token:string})[],model?:{source:'account'|'custom';id:string}):Promise<string>;
   renameChat(id:string,title:string):Promise<void>;
   deleteChat(id:string):Promise<void>;
   listChats():Promise<ChatSummary[]>;
+  generatedDocumentAction(id:string,path:string,action:'open'|'reveal'):Promise<void>;
   cacheGeneratedDocument(id:string,path:string):Promise<{name:string;cache:string}>;
   openChat(id:string):Promise<{messages:ChatMessage[];projectId:string|null;modelBinding?:ChatSummary['modelBinding'];toolEvents:Extract<ChatEvent,{type:'tool'}>[]}>;
   stopChat():Promise<void>;

@@ -73,15 +73,15 @@ export function ComposerPermissionMenu({copy, disabled, value, onChange, onFocus
       <DropdownMenuTrigger asChild>
         <Button
           aria-label={`${copy.label}: ${selected.title}`}
-          className="h-8 max-w-[150px] gap-1.5 rounded-full border-0 bg-muted px-3 text-[13px] font-normal text-foreground shadow-none hover:bg-secondary aria-expanded:bg-muted focus-visible:bg-muted dark:bg-transparent dark:hover:bg-white/5 dark:aria-expanded:bg-transparent"
+          className="composer-permission-trigger h-8 max-w-[150px] gap-1.5 rounded-full border-0 bg-muted px-3 text-[13px] font-normal text-foreground shadow-none hover:bg-secondary aria-expanded:bg-muted focus-visible:bg-muted dark:bg-transparent dark:hover:bg-white/5 dark:aria-expanded:bg-transparent"
           disabled={disabled}
           title={selected.title}
           type="button"
           variant="ghost"
         >
           <SelectedIcon aria-hidden="true" className="size-[15px] shrink-0"/>
-          <span className="min-w-0 flex-1 truncate text-left">{selected.title}</span>
-          <ChevronDownIcon className="size-[13px] shrink-0 text-muted-foreground"/>
+          <span className="composer-permission-label min-w-0 flex-1 truncate text-left">{selected.title}</span>
+          <ChevronDownIcon className="composer-menu-chevron size-[13px] shrink-0 text-muted-foreground"/>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent
@@ -143,8 +143,9 @@ export function ComposerModelMenu({copy, disabled, label, models, value, configu
           type="button"
           variant="ghost"
         >
-          <span className="min-w-0 flex-1 truncate text-left">{name}</span>
-          <ChevronDownIcon className="size-[13px] text-muted-foreground"/>
+          <CpuIcon aria-hidden="true" className="composer-model-icon size-4"/>
+          <span className="composer-model-label min-w-0 flex-1 truncate text-left">{name}</span>
+          <ChevronDownIcon className="composer-menu-chevron size-[13px] text-muted-foreground"/>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent

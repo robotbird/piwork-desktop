@@ -73,6 +73,8 @@ export class ChatSession {
  async prompt(text:string,skillName?:string,images?:import('@earendil-works/pi-ai').ImageContent[]){
   if(!this.session)throw new Error('Session not ready');if(skillName&&!this.session.resourceLoader.getSkills().skills.some(skill=>skill.name===skillName))throw new Error('Skill unavailable');if(this.running)throw new Error('Session busy');if(!text.trim())throw new Error('Empty message');
   this.running=true;this.aborted=false;
+  const startedAt=Date.now();
+  const messageOffset=this.session.messages.length;
   this.mapper=new PiToRuntimeMapper(randomUUID());
   for(const runtimeEvent of this.mapper.start())this.onRuntimeEvent?.(runtimeEvent);
   try {
@@ -81,7 +83,11 @@ export class ChatSession {
    if(!this.session)throw new Error('Session closed');
    if(this.aborted){this.onEvent({type:'aborted'});for(const runtimeEvent of this.mapper.settle('aborted'))this.onRuntimeEvent?.(runtimeEvent)}
    else {const last=this.session.messages.at(-1);const failure=last?.role==='assistant'&&last.stopReason==='error'?last.errorMessage||'Model request failed':'';if(failure){this.onEvent({type:'failed',message:failure});for(const runtimeEvent of this.mapper.fail(failure))this.onRuntimeEvent?.(runtimeEvent)}else{this.onEvent({type:'completed',text:this.session.getLastAssistantText()??''});for(const runtimeEvent of this.mapper.settle('completed'))this.onRuntimeEvent?.(runtimeEvent)}}
-  } catch(error){const failure=error instanceof Error&&error.message?error.message:'Model request failed';this.onEvent(this.aborted?{type:'aborted'}:{type:'failed',message:failure});for(const runtimeEvent of this.aborted?this.mapper.settle('aborted'):this.mapper.fail(failure))this.onRuntimeEvent?.(runtimeEvent)} finally{this.running=false}
+  } catch(error){const failure=error instanceof Error&&error.message?error.message:'Model request failed';this.onEvent(this.aborted?{type:'aborted'}:{type:'failed',message:failure});for(const runtimeEvent of this.aborted?this.mapper.settle('aborted'):this.mapper.fail(failure))this.onRuntimeEvent?.(runtimeEvent)} finally{
+   const user=this.session?.messages.slice(messageOffset).find(message=>message.role==='user');
+   if(user)this.session?.sessionManager.appendCustomEntry('piwork:turn-timing',{userTimestamp:user.timestamp,startedAt,durationMs:Math.max(0,Date.now()-startedAt)});
+   this.running=false;
+  }
  }
  /** 瞬态模型错误(连接失败/网关抖动)不应终结整个回合——长流水线技能(如 ppt-master)几十次工具调用后断线即前功尽弃。
   *  Pi 运行时会把失败的 assistant 响应挂起并在下一次请求中原样带回,因此等待数秒后追加一条「继续」

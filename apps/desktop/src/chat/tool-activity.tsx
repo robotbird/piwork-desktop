@@ -1,6 +1,5 @@
 import {useEffect,useState} from 'react';
-import {CheckCircle2Icon,ChevronDownIcon,FilePlus2Icon,Loader2Icon,SearchIcon,TerminalIcon,WrenchIcon,XCircleIcon} from 'lucide-react';
-import {Badge} from '@/components/ui/badge';
+import {ChevronDownIcon,FileTextIcon,FilePlus2Icon,Loader2Icon,SearchIcon,TerminalIcon,WrenchIcon,XCircleIcon} from 'lucide-react';
 import {Collapsible,CollapsibleContent,CollapsibleTrigger} from '@/components/ui/collapsible';
 import {FileTypeIcon} from '@/components/documents/file-type-icon';
 import type {ToolEvent} from '../../shared/types';
@@ -42,10 +41,10 @@ function safeJson(value:unknown):string{
 }
 function firstLine(text:string):string{const index=text.indexOf('\n');return index===-1?text:text.slice(0,index)}
 function truncate(text:string,max:number):string{return text.length<=max?text:`${text.slice(0,Math.max(max-3,1))}...`}
-/* 折叠态摘要(参考 pi renderers):bash→$ 命令,路径/查询优先,通用 key="value" 截断 100 字符 */
+/* Keep the first command line; CSS clips the summary to the available width. */
 function summarize(event:ToolEvent):string{
   const args=event.args;
-  if(typeof args?.command==='string'&&args.command)return `$ ${truncate(firstLine(args.command),100)}`;
+  if(typeof args?.command==='string'&&args.command)return `$ ${firstLine(args.command)}`;
   if(typeof args?.path==='string'&&args.path)return args.path;
   if(typeof args?.query==='string'&&args.query)return args.query;
   if(typeof args?.pattern==='string'&&args.pattern)return args.pattern;
@@ -131,6 +130,8 @@ function ToolRow({event,copy,open,onToggle,onOpenFile}:{
   const path=event.path;
   const canOpen=path&&onOpenFile&&event.status==='completed'&&
     (event.name==='project_write'||event.name==='project_create_office');
+  const category=categorize(event);
+  const ActionIcon=category==='commands'?TerminalIcon:category==='writes'?FilePlus2Icon:category==='files'?FileTextIcon:category==='searches'||category==='fetches'?SearchIcon:WrenchIcon;
   const statusText=event.status==='running'?copy.running:failed?(event.reason?copy.reasons[event.reason]:copy.failed):copy.completed;
   return (
     <li>
@@ -140,18 +141,18 @@ function ToolRow({event,copy,open,onToggle,onOpenFile}:{
             ?<Loader2Icon aria-hidden="true" className="size-3.5 shrink-0 animate-spin text-muted-foreground"/>
             :failed
               ?<XCircleIcon aria-hidden="true" className="size-3.5 shrink-0 text-destructive"/>
-              :<CheckCircle2Icon aria-hidden="true" className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400"/>}
+              :<ActionIcon aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground"/>}
           <span className="conversation-tool-name">{toolDisplayName(event,copy)}</span>
           {summary&&<code className="conversation-tool-summary">{summary}</code>}
           <span className="conversation-tool-duration">
             {duration!==undefined&&formatDuration(duration)}
             <span className="sr-only"> · {statusText}</span>
           </span>
-          {failed&&<Badge variant="destructive" className="rounded-full">{event.reason?copy.reasons[event.reason]:copy.failed}</Badge>}
           <ChevronDownIcon aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-180"/>
         </CollapsibleTrigger>
         <CollapsibleContent>
           <div className="conversation-tool-detail">
+            {failed&&<p className="conversation-tool-error">{statusText}</p>}
             {(command||entries.length>0)&&(
               <section className="conversation-tool-io">
                 <p className="conversation-tool-io-label">{copy.params}</p>
@@ -203,9 +204,6 @@ export function ToolActivity({events,copy,onOpenFile}:{
     if(open)next.add(id);else next.delete(id);
     return next;
   });
-  /* 全局展开/收起(对应 pi 的 ctrl+o):全部已展开时收起,否则展开所有 */
-  const toggleAll=()=>setOpenIds(current=>events.every(event=>current.has(event.id))?new Set():new Set(events.map(event=>event.id)));
-  const allOpen=events.length>0&&events.every(event=>openIds.has(event.id));
   const running=events.some(event=>event.status==='running');
   const prefix=groupPrefix(events);
   const HeaderIcon=running?Loader2Icon:prefix==='browse'?SearchIcon:prefix==='run'?TerminalIcon:prefix==='write'?FilePlus2Icon:WrenchIcon;
@@ -220,11 +218,6 @@ export function ToolActivity({events,copy,onOpenFile}:{
           <ChevronDownIcon aria-hidden="true" className="size-3.5 transition-transform group-data-[state=open]:rotate-180"/>
         </CollapsibleTrigger>
         <CollapsibleContent>
-          <div className="conversation-tool-listbar">
-            <button className="conversation-tool-toggle-all" type="button" onClick={toggleAll}>
-              {allOpen?copy.collapseAll:copy.expandAll}
-            </button>
-          </div>
           <ul className="conversation-tool-list">
             {events.map(event=>(
               <ToolRow copy={copy} event={event} key={event.id} onOpenFile={onOpenFile}

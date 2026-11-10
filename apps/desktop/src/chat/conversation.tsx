@@ -4,8 +4,11 @@ import {useStickToBottom} from 'use-stick-to-bottom';
 import {Button} from '@/components/ui/button';
 import {copyTextToClipboard} from '@/lib/utils';
 import {FileTypeIcon} from '@/components/documents/file-type-icon';
+import {GeneratedFiles,type DocumentAction} from './generated-files';
+import {documentReferences,documentPath,uniqueDocumentPaths,type DocumentFolder} from './file-links';
 import {isHtmlFile,splitAssistantHtml} from './assistant-html';
 import {visibleAssistantText} from './assistant-text';
+import {Processing,type ProcessCopy} from './processing';
 import {ToolActivity,type ToolActivityCopy} from './tool-activity';
 import {isImageAttachment,AttachmentThumb} from './attachment-image';
 import type {ChatMessage,ChatAttachmentRef} from '../../shared/types';
@@ -13,6 +16,7 @@ import type {ChatMessage,ChatAttachmentRef} from '../../shared/types';
 const DocumentResponse=lazy(()=>import('./document-response').then(module=>({default:module.DocumentResponse})));
 
 type Copy={
+  process:ProcessCopy;
   waiting:string;
   scrollToBottom:string;
   copy:string;
@@ -55,9 +59,9 @@ function InlineHtmlCard({name,content,copy,disabled,saving,onPreview,onSave}:{
   );
 }
 
-function ConversationMessage({message, latest, busy, copy, toolCopy, unexecutedToolRequest, onSave, onOpenToolFile, onOpenAttachment, onPreviewHtml}: {
+function ConversationMessage({message, latest, busy, copy, toolCopy, unexecutedToolRequest, onSave, onOpenToolFile, onOpenAttachment, onPreviewHtml, onDocumentAction, fileFolders}: {
   message:ChatMessage; latest:boolean; busy:boolean; copy:Copy; toolCopy:ToolActivityCopy;
-  unexecutedToolRequest:string; onSave?:(text:string)=>void; onOpenToolFile?:(path:string)=>void;
+  unexecutedToolRequest:string; fileFolders?:DocumentFolder[]; onDocumentAction?:(path:string,action:DocumentAction)=>void; onSave?:(text:string)=>void; onOpenToolFile?:(path:string)=>void;
   onOpenAttachment?:(ref:ChatAttachmentRef)=>void; onPreviewHtml?:(content:string,name:string)=>void;
 }) {
   const [copyResult,setCopyResult]=useState<'success'|'failed'>();
@@ -80,10 +84,12 @@ function ConversationMessage({message, latest, busy, copy, toolCopy, unexecutedT
     return()=>clearTimeout(timeout);
   },[copyResult]);
 
-  const {role,attachmentName,attachment,toolEvents,segments}=message;
+  const {role,attachments,toolEvents,segments}=message;
   /* 携带技能发送的用户消息:气泡前置 ✨ 技能名标识(浅紫高亮,对齐 Codex 参考) */
   const skillName=role==='user'?message.skillName:undefined;
   const streaming=busy&&latest;
+  const outputPaths=role==='assistant'?[...new Set([...documentReferences(segments?.filter(segment=>segment.kind==='text').map(segment=>segment.text).join('\n')||message.text),...(toolEvents??[]).flatMap(event=>event.status==='completed'&&['project_write','project_create_office'].includes(event.name)&&event.path&&documentPath(event.path)?[event.path]:[])])]:[];
+  const outputCards=<GeneratedFiles paths={uniqueDocumentPaths(outputPaths,fileFolders)} onPreview={onOpenToolFile} onAction={onDocumentAction}/>;
   /* 分段交错渲染(对齐 pi 轮次语义/ZCode 展示):text 段与工具组段按时间线交替;
      segments 缺省(旧数据/异常兜底)走下方平铺路径 */
   if(role==='assistant'&&segments?.length){
@@ -104,27 +110,30 @@ function ConversationMessage({message, latest, busy, copy, toolCopy, unexecutedT
     const hasHtml=totalHtml>0||htmlFiles.length>0;
     const waiting=streaming&&!anyText&&!anyTools&&!hasHtml;
     if(!anyText&&!waiting&&!showUnexecuted&&!anyTools&&!hasHtml)return null;
+    // A trailing text block is the answer; preceding text and tools form the process.
+    const answerIndex=blocks.at(-1)?.kind==='text'?blocks.length-1:-1;
+    const processBlocks=blocks.slice(0,answerIndex<0?blocks.length:answerIndex);
+    const process=<Processing active={streaming} copy={copy.process} startedAt={message.startedAt} durationMs={message.durationMs}>
+      {processBlocks.length>0?processBlocks.map((block,index)=>block.kind==='tools'
+        ?<ToolActivity copy={toolCopy} events={block.tools} key={index} onOpenFile={onOpenToolFile}/>
+        :block.text?<div className="conversation-step-description conversation-reply" key={index}>
+          <Suspense fallback={<div className="conversation-text">{block.text}</div>}>
+            <DocumentResponse onOpenFile={onOpenToolFile}>{block.text}</DocumentResponse>
+          </Suspense>
+        </div>:null):undefined}
+    </Processing>;
     let htmlCounter=0;
     return (
       <article className="conversation-message" data-role={role}>
         <div className="conversation-message-body">
-          {htmlFiles.length>0&&(
-            <div className="conversation-html-files">
-              {htmlFiles.map(path=>(
-                <HtmlFileCard action={copy.openHtml} name={path.split('/').at(-1)??path} key={path}
-                  disabled={!onOpenToolFile} onClick={()=>onOpenToolFile?.(path)}/>
-              ))}
-            </div>
-          )}
+          {process}
           {waiting&&<p className="conversation-waiting" role="status">{copy.waiting}</p>}
           {showUnexecuted&&<p className="conversation-tool-progress">{unexecutedToolRequest}</p>}
           {blocks.map((block,index)=>{
-            if(block.kind==='tools')return block.tools.length>0
-              ?<ToolActivity copy={toolCopy} events={block.tools} key={index} onOpenFile={onOpenToolFile}/>
-              :null;
+            if(block.kind==='tools')return null;
             return (
               <Fragment key={index}>
-                {block.text&&(
+                {index===answerIndex&&block.text&&(
                   <div className="conversation-reply">
                     <Suspense fallback={<div className="conversation-text">{block.text}</div>}>
                       <DocumentResponse onOpenFile={onOpenToolFile}>{block.text}</DocumentResponse>
@@ -141,6 +150,7 @@ function ConversationMessage({message, latest, busy, copy, toolCopy, unexecutedT
               </Fragment>
             );
           })}
+          {outputCards}
           {htmlSaveResult&&<p className="conversation-tool-progress" role="status">{htmlSaveResult}</p>}
         </div>
         {anyText&&!busy&&(
@@ -179,32 +189,37 @@ function ConversationMessage({message, latest, busy, copy, toolCopy, unexecutedT
   return (
     <article className="conversation-message" data-role={role}>
       <div className="conversation-message-body">
-        {/* 输入附件:可回溯到项目路径/缓存副本/旧版存储的文本内容时点击预览,否则保持纯展示;图片用缩略图卡片(点击进全屏灯箱) */}
-        {attachmentName && attachment && onOpenAttachment && (attachment.projectPath || attachment.cachePath || attachment.textContent!==undefined) ? (
-          isImageAttachment(attachment)
-            ?<button className="conversation-attachment conversation-attachment-image" title={attachmentName}
-              type="button" onClick={()=>onOpenAttachment(attachment)}>
-              <AttachmentThumb cache={attachment.cachePath!} name={attachmentName}
-                className="conversation-thumb" fallbackClassName="conversation-thumb conversation-thumb-fallback"/>
-              <span className="truncate">{attachmentName}</span>
-            </button>
-            :<button className="conversation-attachment conversation-attachment-open" title={attachmentName}
-              type="button" onClick={()=>onOpenAttachment(attachment)}>
-              <FileTypeIcon className="size-7" filename={attachmentName}/>
-              <span className="truncate">{attachmentName}</span>
-            </button>
-        ) : attachmentName && (
-          <div className="conversation-attachment" title={attachmentName}>
-            <FileTypeIcon className="size-7" filename={attachmentName}/>
-            <span className="truncate">{attachmentName}</span>
+        {role==='assistant'&&<Processing active={streaming} copy={copy.process} startedAt={message.startedAt} durationMs={message.durationMs}>
+          {toolEvents?.length?<ToolActivity events={toolEvents} copy={toolCopy} onOpenFile={onOpenToolFile}/>:undefined}
+        </Processing>}
+        {/* 输入附件(多选):可回溯到项目路径/缓存副本/旧版存储的文本内容时点击预览,否则保持纯展示;图片用缩略图卡片(点击进全屏灯箱) */}
+        {(attachments?.length ?? 0) > 0 && (
+          <div className="conversation-attachments">
+            {attachments!.map((attachment,index)=>{
+              const {name,ref}=attachment;
+              if(ref && onOpenAttachment && (ref.projectPath || ref.cachePath || ref.textContent!==undefined)){
+                return isImageAttachment(ref)
+                  ?<button className="conversation-attachment conversation-attachment-image" key={`${name}:${index}`} title={name}
+                    type="button" onClick={()=>onOpenAttachment(ref)}>
+                    <AttachmentThumb cache={ref.cachePath!} name={name}
+                      className="conversation-thumb" fallbackClassName="conversation-thumb conversation-thumb-fallback"/>
+                    <span className="truncate">{name}</span>
+                  </button>
+                  :<button className="conversation-attachment conversation-attachment-open" key={`${name}:${index}`} title={name}
+                    type="button" onClick={()=>onOpenAttachment(ref)}>
+                    <FileTypeIcon className="size-7" filename={name}/>
+                    <span className="truncate">{name}</span>
+                  </button>;
+              }
+              return <div className="conversation-attachment" key={`${name}:${index}`} title={name}>
+                <FileTypeIcon className="size-7" filename={name}/>
+                <span className="truncate">{name}</span>
+              </div>;
+            })}
           </div>
         )}
         {hasHtml&&(
           <div className="conversation-html-files">
-            {htmlFiles.map(path=>(
-              <HtmlFileCard action={copy.openHtml} name={path.split('/').at(-1)??path} key={path}
-                disabled={!onOpenToolFile} onClick={()=>onOpenToolFile?.(path)}/>
-            ))}
             {separated.html.map((content,index)=>{
               const name=separated.html.length===1?'piwork-answer.html':`piwork-answer-${index+1}.html`;
               return <InlineHtmlCard copy={copy} content={content} key={name} name={name}
@@ -223,8 +238,8 @@ function ConversationMessage({message, latest, busy, copy, toolCopy, unexecutedT
             </Suspense>
           </div>
         ) : <div className={'conversation-bubble conversation-text'+(skillName?' conversation-bubble-skill':'')}>{skillName&&<span className="conversation-skill-tag"><SparklesIcon aria-hidden className="size-3.5"/>{skillName}</span>}{text}</div>}
+        {outputCards}
         {showUnexecuted&&<p className="conversation-tool-progress">{unexecutedToolRequest}</p>}
-        {!!toolEvents?.length&&<ToolActivity events={toolEvents} copy={toolCopy} onOpenFile={onOpenToolFile}/>}
       </div>
       {role==='assistant'&&text&&!busy&&(
         <div className="conversation-message-actions">
@@ -249,9 +264,9 @@ function ConversationMessage({message, latest, busy, copy, toolCopy, unexecutedT
   );
 }
 
-export function Conversation({messages,busy,copy,context,toolCopy,unexecutedToolRequest,onSave,onOpenToolFile,onOpenAttachment,onPreviewHtml}: {
+export function Conversation({messages,busy,copy,context,toolCopy,unexecutedToolRequest,onSave,onOpenToolFile,onOpenAttachment,onPreviewHtml,onDocumentAction,fileFolders}: {
   messages:ChatMessage[]; busy:boolean; copy:Copy; context?:ReactNode; toolCopy:ToolActivityCopy; unexecutedToolRequest:string;
-  onSave?:(text:string)=>void; onOpenToolFile?:(path:string)=>void; onOpenAttachment?:(ref:ChatAttachmentRef)=>void; onPreviewHtml?:(content:string,name:string)=>void;
+  fileFolders?:DocumentFolder[]; onDocumentAction?:(path:string,action:DocumentAction)=>void; onSave?:(text:string)=>void; onOpenToolFile?:(path:string)=>void; onOpenAttachment?:(ref:ChatAttachmentRef)=>void; onPreviewHtml?:(content:string,name:string)=>void;
 }) {
   const {scrollRef,contentRef,isNearBottom,scrollToBottom}=useStickToBottom({
     initial:'instant',
@@ -278,6 +293,8 @@ export function Conversation({messages,busy,copy,context,toolCopy,unexecutedTool
               unexecutedToolRequest={unexecutedToolRequest}
               onOpenAttachment={onOpenAttachment}
               onOpenToolFile={onOpenToolFile}
+              fileFolders={fileFolders}
+              onDocumentAction={onDocumentAction}
               onPreviewHtml={onPreviewHtml}
             />
           ))}

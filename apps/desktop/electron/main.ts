@@ -1,13 +1,13 @@
-import {cacheGeneratedDocument} from './generated-document';
+import {assertDocumentReference,cacheGeneratedDocument} from './generated-document';
 import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell, utilityProcess, powerMonitor } from 'electron';
 import { randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Preferences, Project, ChatEvent, ChatChunkMessage, ChatSummary, PickedAttachment, LocalSkill, McpServer, McpInput, Schedule, ScheduleRun, ScheduleInput, ScheduleCreateRequest, ApprovalRequest, ApprovalDecision } from '../shared/types';
-import { listProjectEntries, searchProjectEntries, splitProjectPath, resolveInside, saveProjectMarkdown, readProjectText, readProjectImage, readProjectPdf, readProjectDocx, readProjectXlsx, readProjectPptx, type ProjectRoot } from './project-files';
+import { listProjectEntries, searchProjectEntries, splitProjectPath, resolveInside, saveProjectMarkdown, readProjectText, readProjectImage, readProjectPdf, readProjectDocx, readProjectXlsx, readProjectPptx, verifyImageBytes, imageExtension, type ProjectRoot } from './project-files';
 import { listLibrary, createLibraryFolder, saveLibraryNote, uploadLibraryFiles, renameLibraryItem, moveLibraryItem, registerAiFile, forgetLibraryItem, ensureLibrary } from './library-store';
-import {accountStatus,openAccountLogin,logoutAccount,accountSyncAvailable,accountSyncTransport,listWebHistory,readWebHistory,openWebHistory} from './account';
+import {completeAccountLogin,setAccountNotifier,accountStatus,openAccountLogin,logoutAccount,accountSyncAvailable,accountSyncTransport,listWebHistory,readWebHistory,openWebHistory} from './account';
 import {SyncJournal,type SyncAccount} from './sync-journal';
 import {SettingsStorage} from './settings-storage';
 import {syncOneChat,prepareSyncRun} from './sync-engine';
@@ -74,7 +74,12 @@ function gatewayPath(){return path.join(app.getPath('userData'),'gateway.json')}
 async function getGateway():Promise<StoredGateway|null>{try{const data=JSON.parse(await fs.readFile(gatewayPath(),'utf8'));if(typeof data.baseUrl!=='string'||typeof data.modelId!=='string'||(data.encryptedKey!==undefined&&typeof data.encryptedKey!=='string')||(data.supportsImages!==undefined&&typeof data.supportsImages!=='boolean'))throw new Error('Invalid gateway data');return data}catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return null;throw error}}
 function publicGateway(value:StoredGateway):GatewayConfig{return {baseUrl:value.baseUrl,modelId:value.modelId,hasApiKey:!!value.encryptedKey,supportsImages:value.supportsImages===true}}
 async function saveGateway(input:{baseUrl:string;modelId:string;apiKey:string;supportsImages?:boolean}):Promise<GatewayConfig>{const valid=validateGateway(input);const old=await getGateway();let encryptedKey=old?.baseUrl===valid.baseUrl?old.encryptedKey:undefined;if(valid.apiKey){if(!safeStorage.isEncryptionAvailable())throw new Error('Secure storage unavailable');encryptedKey=safeStorage.encryptString(valid.apiKey).toString('base64')}const next:StoredGateway={baseUrl:valid.baseUrl,modelId:valid.modelId,supportsImages:valid.supportsImages===true,...(encryptedKey?{encryptedKey}:{})};await fs.mkdir(app.getPath('userData'),{recursive:true});const target=gatewayPath();await fs.writeFile(target+'.tmp',JSON.stringify(next),{mode:0o600});await fs.rename(target+'.tmp',target);return publicGateway(next)}
+let receiveAccountCallback:((url:string)=>Promise<void>)|undefined;
+let queuedAccountCallback:string|undefined;
+function dispatchAccountCallback(url:string){if(!url.startsWith("piwork://auth/callback?"))return;if(receiveAccountCallback)void receiveAccountCallback(url).catch(()=>{});else queuedAccountCallback=url}
 function register(window:BrowserWindow){
+ let accountChanging=false;
+ setAccountNotifier(()=>{if(!window.isDestroyed())window.webContents.send("account:changed")});
  let accountFailure:number|null=null;let accountBridge:Awaited<ReturnType<typeof startAccountBridge>>|null=null;let activeModelKey:string|null=null;let worker:Electron.UtilityProcess|null=null;let busy=false;let activeChatId:string|null=null;let activeSkillId:string|null=null;let activeMcpId:string|null=null;let pendingPicks=new Map<string,string>();
  const scheduledWorkers=new Map<string,Electron.UtilityProcess>();const activeSchedules=new Set<string>();let scheduling=false;let suspended=false;let recoverPending=true;let schedulerTimer:NodeJS.Timeout|undefined;
  const sessionDir=path.join(app.getPath('userData'),'sessions');
@@ -92,7 +97,7 @@ function register(window:BrowserWindow){
  async function currentSyncAccount():Promise<SyncAccount>{const account=await accountStatus();if(!account.baseUrl||!account.user)throw new Error('Account unavailable');return {baseUrl:account.baseUrl,userId:account.user.id}}
  async function appendRemote(id:string,items:import('./sync-journal').SyncTextMessage[]){if(activeChatId===id&&worker)stopWorker();await fs.mkdir(sessionDir,{recursive:true,mode:0o700});appendRemoteHistory(sessionFile(id),sessionDir,app.getPath('userData'),items);changedSyncHistory.add(id);notifySync()}
  async function synchronize(){
-  if(!experimentalSync||!state.preferences.syncEnabled||syncWorking||syncPreparing||busy)return;syncWorking=true;syncState='syncing';notifySync();
+  if(!experimentalSync||!state.preferences.syncEnabled||syncWorking||syncPreparing||busy||accountChanging)return;syncWorking=true;syncState='syncing';notifySync();
   try{const account=await currentSyncAccount();const records=await syncJournal.list(account);if(records.some(record=>record.running)){syncState='interrupted';return}let remoteBusy=false;for(const record of records){if(busy)break;const result=await syncOneChat({journal:syncJournal,account,chatId:record.chatId,transport:accountSyncTransport(account),isBusy:()=>busy,appendRemote:items=>appendRemote(record.chatId,items)});if(result==='idle')remoteBusy=true}const latest=await syncJournal.list(account);syncState=remoteBusy||latest.some(item=>item.pending.length||item.leaseToken)?'pending':'ready'}catch(error){syncState=error instanceof Error&&error.message==='Sync conflict'?'conflict':'unavailable'}finally{syncWorking=false;flushSyncHistory();notifySync()}
  }
  async function finishForegroundSync(status:'completed'|'failed'|'aborted',text?:string){const account=foregroundSync;foregroundSync=null;if(!account||!activeChatId)return;try{await syncJournal.finish(activeChatId,account,status,text);syncState='pending'}catch{syncState='interrupted'}notifySync()}
@@ -127,9 +132,9 @@ function register(window:BrowserWindow){
   if(idle>softLimit+30000){stopWorker();emit({type:'failed',message:'Agent response timed out'});setImmediate(()=>void synchronize());return}
   if(idle>softLimit&&!abortRequested){abortRequested=true;worker.postMessage({type:'abort'})}
  },5000);
- let pickedAttachment: {info:PickedAttachment;data:PickedAttachmentContent}|null=null;
+ let pickedAttachments: {info:PickedAttachment;data:PickedAttachmentContent}[]=[];
  let pickingAttachment=false;
- const resetChat=()=>{stopWorker();activeChatId=null;pickedAttachment=null};
+ const resetChat=()=>{stopWorker();activeChatId=null;pickedAttachments=[]};
  const onSuspend=()=>{suspended=true};const onResume=()=>{suspended=false;recoverPending=true;void tickSchedules().catch(()=>{})};powerMonitor.on('suspend',onSuspend);powerMonitor.on('resume',onResume);
  const syncTimer=setInterval(()=>{void synchronize()},15000);
  setImmediate(()=>void synchronize());
@@ -231,11 +236,68 @@ function register(window:BrowserWindow){
    await fs.mkdir(cacheDir,{recursive:true,mode:0o700});
    await fs.copyFile(await resolveInside(root,relative),path.join(cacheDir,name));
    const info={token,name,kind:data.kind,cache:`${token}/${name}`};
-   pickedAttachment={info,data};
+   pickedAttachments=[...pickedAttachments.filter(entry=>entry.info.cache!==info.cache),{info,data}];
    return info;
   }finally{pickingAttachment=false}
  });
+ // 粘贴的剪贴板内容批量入槽:带 path 的条目为 Finder 拷贝的文件(任意类型,按 pick 对话框分支读取+复制进缓存),
+ // base64 条目为剪贴板图片字节;全部处理成功才统一写入(all-or-nothing),任一失败整批放弃不留部分附件
+ handle('chat:attach-files',async(items:({path:string}|{name:string;mimeType:string;base64:string})[])=>{
+  if(busy||pickingAttachment)throw new Error('Chat busy');
+  pickingAttachment=true;
+  try{
+   if(!Array.isArray(items)||!items.length||items.length>10)throw new Error('Invalid files');
+   const staged:{info:PickedAttachment;data:PickedAttachmentContent}[]=[];
+   for(const item of items){
+    if(item&&'path' in item&&typeof item.path==='string'&&item.path){
+     const root=path.dirname(item.path);
+     const relative=path.basename(item.path);
+     const data=await readChatAttachment(root,relative);
+     const token=randomUUID();
+     const name=path.basename(relative);
+     const cacheDir=path.join(attachmentsDir,token);
+     await fs.mkdir(cacheDir,{recursive:true,mode:0o700});
+     await fs.copyFile(await resolveInside(root,relative),path.join(cacheDir,name));
+     staged.push({info:{token,name,kind:data.kind,cache:`${token}/${name}`},data});
+    }else if(item&&'base64' in item&&typeof item.base64==='string'){
+     const image=item as {name?:unknown;mimeType?:unknown;base64:string};
+     if(typeof image.mimeType!=='string')throw new Error('Invalid image');
+     const bytes=Buffer.from(image.base64,'base64');
+     verifyImageBytes(bytes,image.mimeType);
+     const ext=imageExtension(image.mimeType)!;
+     // 文件名仅作展示:basename + 白名单字符集与扩展名,不合规则回退时间戳名(防路径穿越,并保证缓存扩展名与真实格式一致供 readAttachment 分发)
+     const provided=typeof image.name==='string'?path.basename(image.name):'';
+     const name=/^[\w .\u4e00-\u9fff-]+\.(png|jpe?g|gif|webp)$/i.test(provided)&&provided.length<=100?provided:`clipboard-${Date.now()}${ext}`;
+     const token=randomUUID();
+     const cacheDir=path.join(attachmentsDir,token);
+     await fs.mkdir(cacheDir,{recursive:true,mode:0o700});
+     await fs.writeFile(path.join(cacheDir,name),bytes,{mode:0o600});
+     staged.push({info:{token,name,kind:'image' as const,cache:`${token}/${name}`},data:{kind:'image',image:{type:'image',mimeType:image.mimeType,data:image.base64}}});
+    }else throw new Error('Invalid files');
+   }
+   const added:PickedAttachment[]=[];
+   for(const entry of staged){
+    pickedAttachments=[...pickedAttachments.filter(existing=>existing.info.cache!==entry.info.cache),entry];
+    added.push(entry.info);
+   }
+   return added;
+  }finally{pickingAttachment=false}
+ });
+ // 输入框移除附件 chip:释放主进程为对应 token 持有的读取内容,防止反复粘贴/移除累积大对象
+ handle('chat:detach-attachments',async(tokens:string[])=>{
+  if(!Array.isArray(tokens))return;
+  const removed=new Set(tokens);
+  pickedAttachments=pickedAttachments.filter(entry=>!removed.has(entry.info.token));
+ });
  // 附件缓存预览:按扩展名分发到与项目文件一致的读取器(继承 1MB 文本/10MB 图片/20MB Office 上限)
+ handle('chat:documentAction',async(id:string,target:string,action:'open'|'reveal')=>{
+  if(!isChatId(id)||id!==activeChatId||!(state.chats??[]).some(chat=>chat.id===id)||!['open','reveal'].includes(action))throw new Error('Invalid document action');
+  const manager=SessionManager.open(sessionFile(id),sessionDir,app.getPath('userData'));
+  assertDocumentReference(target,projectChatHistory(manager.buildSessionContext().messages));
+  if(!(await fs.stat(target)).isFile())throw new Error('Not a file');
+  if(action==='reveal')shell.showItemInFolder(target);
+  else if(await shell.openPath(target))throw new Error('Cannot open document');
+ });
  handle('chat:cacheGeneratedDocument',async(id:string,target:string)=>{
   if(!isChatId(id)||id!==activeChatId||!(state.chats??[]).some(chat=>chat.id===id))throw new Error('Chat not found');
   const manager=SessionManager.open(sessionFile(id),sessionDir,app.getPath('userData'));
@@ -255,8 +317,8 @@ function register(window:BrowserWindow){
  });
  handle('chat:openAttachmentExternal',async(cache:string)=>{if(await shell.openPath(await attachmentCacheTarget(cache)))throw new Error('Cannot open attachment')});
  handle('chat:revealAttachment',async(cache:string)=>{shell.showItemInFolder(await attachmentCacheTarget(cache))});
- handle('chat:send',async(text:string,projectId:string|null,skillId:string|null,mcpId:string|null,attachment:string|{token:string}|null,selection?:{source:'account'|'custom';id:string})=>{
-  if(typeof text!=='string'||!text.trim()||text.length>100000)throw new Error('Invalid message');if(syncWorking||syncPreparing)throw new Error('Sync busy');if(busy||pickingAttachment)throw new Error('Session busy');
+ handle('chat:send',async(text:string,projectId:string|null,skillId:string|null,mcpId:string|null,attachments:(string|{token:string})[],selection?:{source:'account'|'custom';id:string})=>{
+  if(typeof text!=='string'||!text.trim()||text.length>100000)throw new Error('Invalid message');if(!Array.isArray(attachments)||attachments.length>10)throw new Error('Invalid attachment');if(syncWorking||syncPreparing)throw new Error('Sync busy');if(busy||pickingAttachment||accountChanging)throw new Error('Session busy');
   busy=true;
   try {if(skillId!==null&&typeof skillId!=='string')throw new Error('Invalid skill');const skill=skillId?(state.skills??[]).find(item=>item.id===skillId&&item.enabled):undefined;if(skillId&&!skill)throw new Error('Skill not enabled');if(skill)await fs.access(skill.filePath);if(mcpId!==null&&typeof mcpId!=='string')throw new Error('Invalid MCP');const mcp=mcpId?(state.mcpServers??[]).find(item=>item.id===mcpId&&item.enabled):undefined;if(mcpId&&!mcp)throw new Error('MCP not enabled');if(worker&&(activeSkillId!==skillId||activeMcpId!==mcpId))stopWorker();busy=true;const activeChat=activeChatId?(state.chats??[]).find(chat=>chat.id===activeChatId):undefined;if(activeChatId&&!activeChat)throw new Error('Chat not found');const selectedProject=validateChatProject(projectId,state.projects,activeChat);const source=selection?.source??'custom';if(!['custom','account'].includes(source))throw new Error('Invalid model source');let gateway:StoredGateway;let binding:NonNullable<ChatSummary['modelBinding']>;let supportsImages=false;
   if(source==='account'){const account=await accountStatus();const model=account.models.find(item=>item.id===selection?.id);if(!account.baseUrl||!account.user||!model)throw new Error('Account model unavailable');binding={source,id:model.id,baseUrl:account.baseUrl,userId:account.user.id};supportsImages=model.supportsImages===true;gateway={baseUrl:account.baseUrl,modelId:model.id};}else{const custom=await getGateway();if(!custom||selection&&selection.id!==custom.modelId)throw new Error('Gateway not configured');gateway=custom;binding={source,id:custom.modelId,baseUrl:custom.baseUrl};supportsImages=custom.supportsImages===true}
@@ -265,16 +327,23 @@ function register(window:BrowserWindow){
   const roots=project?projectRoots(project.id):[];
   let promptText=text;
   let images:import('@earendil-works/pi-ai').ImageContent[]|undefined;
-  if(typeof attachment==='string'){
-   if(!project||!roots.length)throw new Error('Project required');
-   promptText=await addProjectTextAttachment(text,roots,attachment);
-  }else if(attachment!==null){
-   if(!attachment||!pickedAttachment||attachment.token!==pickedAttachment.info.token)throw new Error('Invalid attachment');
-   if(pickedAttachment.data.kind==='image'){
-    if(!supportsImages)throw new Error('Model does not support images');
-    images=[pickedAttachment.data.image];
+  // 多附件:项目文件(string)逐个追加 PROJECT marker;token 逐个映射 pickedAttachments 并追加 PICKED marker,图片汇入 images
+  const usedTokens=new Set<string>();
+  for(const attachment of attachments){
+   if(typeof attachment==='string'){
+    if(!project||!roots.length)throw new Error('Project required');
+    promptText=await addProjectTextAttachment(promptText,roots,attachment);
+   }else{
+    if(!attachment||typeof attachment.token!=='string')throw new Error('Invalid attachment');
+    const entry=pickedAttachments.find(candidate=>candidate.info.token===attachment.token);
+    if(!entry)throw new Error('Invalid attachment');
+    usedTokens.add(entry.info.token);
+    if(entry.data.kind==='image'){
+     if(!supportsImages)throw new Error('Model does not support images');
+     (images??=[]).push(entry.data.image);
+    }
+    promptText=addPickedAttachment(promptText,entry.info.name,entry.data,entry.info.cache);
    }
-   promptText=addPickedAttachment(text,pickedAttachment.info.name,pickedAttachment.data,pickedAttachment.info.cache);
   }
   let key='';if(gateway.encryptedKey){if(!safeStorage.isEncryptionAvailable())throw new Error('Secure storage unavailable');key=safeStorage.decryptString(Buffer.from(gateway.encryptedKey,'base64'))}
   if(!activeChatId){const id=randomUUID();await update(current=>({...current,chats:[{id,title:text.trim().slice(0,80),updatedAt:Date.now(),projectId:selectedProject,projectPath:roots[0]?.root??null,...(roots.length?{projectFolders:roots.map(item=>item.root)}:{}) ,modelBinding:binding},...(current.chats??[])]}));activeChatId=id}
@@ -283,14 +352,14 @@ function register(window:BrowserWindow){
   if(source==='account'){if(!accountBridge)accountBridge=await startAccountBridge(binding.baseUrl,binding.id,status=>{accountFailure=status});accountFailure=null;accountBridge.newRun();gateway={baseUrl:accountBridge.baseUrl,modelId:binding.id};key=accountBridge.apiKey}activeModelKey=modelKey;
   if(!worker){const child=utilityProcess.fork(path.join(dirname,'chat-worker.js'),[],{stdio:'ignore'});worker=child;activeSkillId=skillId;activeMcpId=mcpId;child.on('message',async(event:ChatEvent|ChatChunkMessage|ScheduleCreateRequest)=>{if(worker!==child)return;lastWorkerActivity=Date.now();abortRequested=false;if(event.type==='tool'){if(event.status==='running')runningToolIds.add(event.id);else runningToolIds.delete(event.id)}if(event.type==='schedule:create'){try{await createScheduleRecord({name:event.input.taskType,prompt:event.input.prompt,cron:event.input.cron,timezone:event.input.timezone,projectId:null,skillId:null,mcpId:null});child.postMessage({type:'schedule:result',id:event.id,ok:true})}catch(error){child.postMessage({type:'schedule:result',id:event.id,ok:false,error:error instanceof Error?error.message:'Schedule create failed'})}return}if(event.type==='chunk'){if(!window.isDestroyed())window.webContents.send('chat:chunk',event);return}if(event.type==='approval'){const chatProject=(state.chats??[]).find(chat=>chat.id===activeChatId)?.projectId??undefined;void askApproval(event,chatProject).then(allowed=>{if(worker===child)child.postMessage({type:'approval',id:event.id,allowed})});return}if(event.type==='completed'||event.type==='failed'||event.type==='aborted'){await finishForegroundSync(event.type==='completed'?'completed':event.type==='aborted'?'aborted':'failed',event.type==='completed'?event.text:undefined);busy=false;setImmediate(()=>void synchronize());const id=activeChatId;if(id)await update(current=>({...current,chats:(current.chats??[]).map(chat=>chat.id===id?{...chat,updatedAt:Date.now()}:chat)})).catch(()=>{});if(worker!==child)return}emit(event.type==='failed'&&accountFailure?{type:'failed',message:`account:${accountFailure}`} : event)});child.on('exit',async()=>{if(worker!==child)return;worker=null;denyApprovals();if(busy){await finishForegroundSync('failed');busy=false;setImmediate(()=>void synchronize());emit({type:'failed',message:'Agent process stopped'})}});child.postMessage({type:'start',gateway:{baseUrl:gateway.baseUrl,modelId:gateway.modelId,apiKey:key,supportsImages,...(source==='account'?{api:'pi-messages'}:{})},cwd:app.getPath('userData'),agentDir:piAgentDir(),sessionFile:sessionFile(activeChatId),...(roots.length?{projectFolders:roots}:{}),...(mcp?{mcp}:{}),...(skill?{skill:{name:skill.name,filePath:skill.filePath}}:{}),text:promptText,images,allowScheduleTools:true,permission:state.preferences.permission??'confirm'})}
   else worker.postMessage({type:'prompt',text:promptText,images,...(skill?{skillName:skill.name}:{})});
-  if(attachment&&typeof attachment==='object')pickedAttachment=null;
+  if(usedTokens.size)pickedAttachments=pickedAttachments.filter(entry=>!usedTokens.has(entry.info.token));
   return activeChatId;
   }catch(error){if(foregroundSync)await finishForegroundSync('failed');if(!worker){accountBridge?.close();accountBridge=null;activeModelKey=null}busy=false;setImmediate(()=>void synchronize());throw error}
  });
  handle('chat:stop',()=>{if(worker&&busy)worker.postMessage({type:'abort'})});
  handle('chat:clear',()=>{if(syncWorking||syncPreparing||foregroundSync&&busy)throw new Error('Sync run active');resetChat()});
  handle('chat:list',()=>[...(state.chats??[])].sort((a,b)=>b.updatedAt-a.updatedAt));
- handle('chat:open',async(id:string)=>{if(!isChatId(id)||!(state.chats??[]).some(chat=>chat.id===id))throw new Error('Chat not found');if(busy||syncWorking||syncPreparing)throw new Error('Chat busy');const file=sessionFile(id);await fs.access(file);const context=SessionManager.open(file,sessionDir,app.getPath('userData')).buildSessionContext();const messages=projectChatHistory(context.messages);stopWorker();if(activeChatId!==id)pickedAttachment=null;activeChatId=id;return {messages,toolEvents:messages.flatMap(message=>message.toolEvents??[]),projectId:(state.chats??[]).find(chat=>chat.id===id)?.projectId??null,modelBinding:(state.chats??[]).find(chat=>chat.id===id)?.modelBinding}});
+ handle('chat:open',async(id:string)=>{if(!isChatId(id)||!(state.chats??[]).some(chat=>chat.id===id))throw new Error('Chat not found');if(busy||syncWorking||syncPreparing)throw new Error('Chat busy');const file=sessionFile(id);await fs.access(file);const manager=SessionManager.open(file,sessionDir,app.getPath('userData'));const context=manager.buildSessionContext();const timings=new Map<number,{startedAt:number;durationMs:number}>();for(const entry of manager.getBranch()){if(entry.type==='custom'&&entry.customType==='piwork:turn-timing'){const data=entry.data as {userTimestamp?:number;startedAt?:number;durationMs?:number}|undefined;if(data&&typeof data.userTimestamp==='number'&&typeof data.startedAt==='number'&&typeof data.durationMs==='number')timings.set(data.userTimestamp,{startedAt:data.startedAt,durationMs:data.durationMs})}}const messages=projectChatHistory(context.messages,timings);stopWorker();if(activeChatId!==id)pickedAttachments=[];activeChatId=id;return {messages,toolEvents:messages.flatMap(message=>message.toolEvents??[]),projectId:(state.chats??[]).find(chat=>chat.id===id)?.projectId??null,modelBinding:(state.chats??[]).find(chat=>chat.id===id)?.modelBinding}});
  handle('chat:rename',async(id:string,title:string)=>{await update(current=>({...current,chats:renameChat(current.chats??[],id,title)}))});
  handle('chat:delete',async(id:string)=>{
   if(!isChatId(id)||!(state.chats??[]).some(chat=>chat.id===id))throw new Error('Chat not found');
@@ -308,11 +377,18 @@ function register(window:BrowserWindow){
  handle('web-history:read',async(id:string)=>{const result=await readWebHistory(id);return {messages:result.messages,omitted:result.omitted}});
  handle('web-history:open',(id:string)=>openWebHistory(id));
  handle('web-history:import',async(id:string,title:string)=>{if(busy||syncWorking||syncPreparing)throw new Error('Session busy');if(typeof title!=='string'||!title.trim()||title.length>1000)throw new Error('Invalid title');const remote=await readWebHistory(id);if(!remote.messages.length)throw new Error('Empty web chat');await fs.mkdir(sessionDir,{recursive:true,mode:0o700});const newId=randomUUID(),target=sessionFile(newId);try{appendRemoteHistory(target,sessionDir,app.getPath('userData'),remote.messages);await update(current=>({...current,chats:[{id:newId,title:title.trim().slice(0,80),updatedAt:Date.now(),projectId:null,projectPath:null},...(current.chats??[])]}));return newId}catch(error){await fs.unlink(target).catch(()=>{});throw error}});
+ async function canChangeAccount(){if(busy||syncWorking||syncPreparing)throw new Error('Session busy');if(experimentalSync&&state.preferences.syncEnabled&&await syncJournal.hasUnresolved())throw new Error('Sync pending')}
+ receiveAccountCallback=async(url)=>{
+  if(accountChanging)return;accountChanging=true;
+  try{if(await completeAccountLogin(url,canChangeAccount)){stopWorker();if(window.isMinimized())window.restore();window.show();window.focus();setImmediate(()=>void synchronize())}}
+  finally{accountChanging=false}
+ };
+ if(queuedAccountCallback){const url=queuedAccountCallback;queuedAccountCallback=undefined;void receiveAccountCallback(url).catch(()=>{})}
  handle('account:status',()=>accountStatus());
- handle('account:login',async(baseUrl:string)=>{if(busy||syncWorking||syncPreparing)throw new Error('Session busy');if(experimentalSync&&state.preferences.syncEnabled&&await syncJournal.hasUnresolved())throw new Error('Sync pending');return openAccountLogin(window,baseUrl)});
- handle('account:logout',async()=>{if(busy||syncWorking||syncPreparing)throw new Error('Session busy');if(experimentalSync&&state.preferences.syncEnabled&&await syncJournal.hasUnresolved())throw new Error('Sync pending');await logoutAccount();stopWorker()});
+ handle('account:login',async(baseUrl:string)=>{if(accountChanging)throw new Error('Session busy');accountChanging=true;try{await canChangeAccount();await openAccountLogin(baseUrl)}finally{accountChanging=false}});
+ handle('account:logout',async()=>{if(accountChanging)throw new Error('Session busy');accountChanging=true;try{await canChangeAccount();await logoutAccount();stopWorker();if(!window.isDestroyed())window.webContents.send('account:changed')}finally{accountChanging=false}});
  handle('gateway:get',async()=>{const value=await getGateway();return value?publicGateway(value):null});
- handle('gateway:set',async(input)=>{if(busy||pickingAttachment)throw new Error('Session busy');const result=await saveGateway(input);stopWorker();return result});
+ handle('gateway:set',async(input)=>{if(busy||pickingAttachment||accountChanging)throw new Error('Session busy');const result=await saveGateway(input);stopWorker();return result});
  handle('preferences:get',()=>state.preferences);
  handle('app:version',()=>app.getVersion());
  // 客户端自动更新:快照/检查/下载/取消/打开安装包;状态变化经 app-update:changed 通知渲染层(仿 sync:changed)
@@ -454,7 +530,9 @@ const hasInstanceLock=app.requestSingleInstanceLock();
 if(!hasInstanceLock)app.quit();
 else {
 registerPreviewScheme();
-app.on('second-instance',()=>{const window=BrowserWindow.getAllWindows()[0];if(window){if(window.isMinimized())window.restore();window.show();window.focus()}});
-app.whenReady().then(async()=>{await load();const window=new BrowserWindow({width:1240,height:820,minWidth:800,minHeight:600,title:'piwork',titleBarStyle:'hiddenInset',webPreferences:{preload:path.join(dirname,'preload.mjs'),contextIsolation:true,nodeIntegration:false,sandbox:true,webviewTag:true}});bindBrowserGuests(window);register(window);const devUrl=developmentServerUrl(app.isPackaged,process.env.VITE_DEV_SERVER_URL);window.webContents.setWindowOpenHandler(()=>({action:'deny'}));window.webContents.on('will-navigate',(event,url)=>{if(!allowedNavigation(url,devUrl,path.join(dirname,'../dist/index.html')))event.preventDefault()});if(devUrl)await window.loadURL(devUrl);else await window.loadFile(path.join(dirname,'../dist/index.html'));scheduleAppUpdateAutoCheck()}).catch(error=>{dialog.showErrorBox('PiWork',`无法启动或读取本地数据。现有数据未被重置，请检查文件和权限后重试。\nUnable to start or read local data. Existing data has not been reset; check files and permissions and try again.\n\n${String(error)}`);app.quit()});
+app.on('open-url',(event,url)=>{event.preventDefault();dispatchAccountCallback(url)});
+if(process.defaultApp&&process.argv[1])app.setAsDefaultProtocolClient('piwork',process.execPath,[path.resolve(process.argv[1])]);else app.setAsDefaultProtocolClient('piwork');
+app.on('second-instance',(_event,argv)=>{for(const arg of argv)dispatchAccountCallback(arg);const window=BrowserWindow.getAllWindows()[0];if(window){if(window.isMinimized())window.restore();window.show();window.focus()}});
+app.whenReady().then(async()=>{await load();const window=new BrowserWindow({width:1240,height:820,minWidth:800,minHeight:600,title:'piwork',titleBarStyle:'hiddenInset',webPreferences:{preload:path.join(dirname,'preload.mjs'),contextIsolation:true,nodeIntegration:false,sandbox:true,webviewTag:true}});bindBrowserGuests(window);register(window);for(const arg of process.argv)dispatchAccountCallback(arg);const devUrl=developmentServerUrl(app.isPackaged,process.env.VITE_DEV_SERVER_URL);window.webContents.setWindowOpenHandler(()=>({action:'deny'}));window.webContents.on('will-navigate',(event,url)=>{if(!allowedNavigation(url,devUrl,path.join(dirname,'../dist/index.html')))event.preventDefault()});if(devUrl)await window.loadURL(devUrl);else await window.loadFile(path.join(dirname,'../dist/index.html'));scheduleAppUpdateAutoCheck()}).catch(error=>{dialog.showErrorBox('PiWork',`无法启动或读取本地数据。现有数据未被重置，请检查文件和权限后重试。\nUnable to start or read local data. Existing data has not been reset; check files and permissions and try again.\n\n${String(error)}`);app.quit()});
 app.on('window-all-closed',()=>app.quit());
 }

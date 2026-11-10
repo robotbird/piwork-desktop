@@ -1,4 +1,4 @@
-import {useLayoutEffect, useRef, useState, type FormEvent} from 'react';
+import {useLayoutEffect, useRef, useState, type ClipboardEvent, type FormEvent} from 'react';
 import {
   FolderIcon, FolderPlusIcon, MoreHorizontalIcon, PencilIcon, Trash2Icon, XIcon,
 } from 'lucide-react';
@@ -50,14 +50,13 @@ function formatShortDate(timestamp: number, locale: string) {
   });
 }
 
-export function ProjectHome({project, chats, copy, busy, attachmentReady, attachmentName, attachmentRef, feedback, onOpenAttachment, onRemoveAttachment, onOpenChat, onRenameChat, onDeleteChat, onSend, onPickAttachment, onOpenLibrary, onEditProject, onRemoveProject, onProjectChanged}: {
+export function ProjectHome({project, chats, copy, busy, attachmentReady, attachments, feedback, onOpenAttachment, onRemoveAttachment, onOpenChat, onRenameChat, onDeleteChat, onSend, onPickAttachment, onOpenLibrary, onEditProject, onRemoveProject, onProjectChanged, onPasteImage}: {
   project: Project;
   chats: ChatSummary[];
   copy: ProjectHomeCopy;
   busy: boolean;
   attachmentReady: boolean;
-  attachmentName?: string;
-  attachmentRef?: ChatAttachmentRef;
+  attachments?: {name: string; ref?: ChatAttachmentRef}[];
   feedback?: string;
   onOpenAttachment: (ref: ChatAttachmentRef) => void;
   onOpenChat: (id: string) => void;
@@ -65,11 +64,13 @@ export function ProjectHome({project, chats, copy, busy, attachmentReady, attach
   onDeleteChat: (chat: ChatSummary) => void;
   onSend: (text: string) => void;
   onPickAttachment: () => void;
+  /** 输入框粘贴事件:剪贴板图片/拷贝文件批量经主进程校验后占用多附件槽位 */
+  onPasteImage?: (event: ClipboardEvent<HTMLTextAreaElement>) => void;
   onOpenLibrary: () => void;
   onEditProject: () => void;
   onRemoveProject: (project: Project) => void;
   onProjectChanged: () => void;
-  onRemoveAttachment: () => void;
+  onRemoveAttachment: (index: number) => void;
 }) {
   const [tab, setTab] = useState<'chats' | 'sources'>('chats');
   const [draft, setDraft] = useState('');
@@ -163,8 +164,8 @@ export function ProjectHome({project, chats, copy, busy, attachmentReady, attach
   }
 
   const inputPlaceholder = copy.web.inputPlaceholder.replace('{name}', project.name);
-  // 附件占一行时保持多行外框;否则按测量切换(web 同款)
-  const composerMultiline = !!attachmentName || multiline;
+  // 附件占行时保持多行外框;否则按测量切换(web 同款)
+  const composerMultiline = (attachments?.length ?? 0) > 0 || multiline;
 
   return (
     <section className="mx-auto flex w-full max-w-3xl flex-1 flex-col overflow-y-auto px-6 pb-16 pt-12 md:px-8">
@@ -205,27 +206,31 @@ export function ProjectHome({project, chats, copy, busy, attachmentReady, attach
         onSubmit={submit}
         ref={composerRef}
       >
-        {attachmentName && (
-          <span className="attachment-chip col-span-3 col-start-1 row-start-1 flex min-h-9 items-center gap-2 rounded-full bg-muted px-3 py-1 text-sm text-foreground">
-            {(() => {
-              const icon = attachmentRef && isImageAttachment(attachmentRef)
-                ? <AttachmentThumb cache={attachmentRef.cachePath!} name={attachmentName}
-                    className="size-6 shrink-0 rounded-md object-cover"
-                    fallbackClassName="grid size-6 shrink-0 place-items-center rounded-md bg-muted"/>
-                : <FileTypeIcon className="size-4 shrink-0" filename={attachmentName}/>;
-              return attachmentRef ? (
-                <button className="flex min-w-0 flex-1 items-center gap-2 text-left underline decoration-transparent underline-offset-2 transition-colors hover:decoration-foreground" onClick={() => onOpenAttachment(attachmentRef)} title={attachmentName} type="button">
-                  {icon}
-                  <span className="min-w-0 flex-1 truncate">{attachmentName}</span>
-                </button>
-              ) : (
-                <>{icon}<span className="min-w-0 flex-1 truncate">{attachmentName}</span></>
-              );
-            })()}
-            <Button aria-label={copy.removeAttachment} className="size-6 shrink-0 rounded-full" onClick={onRemoveAttachment} size="icon-xs" type="button" variant="ghost">
-              <XIcon aria-hidden="true" className="size-3.5"/>
-            </Button>
-          </span>
+        {(attachments?.length ?? 0) > 0 && (
+          <div className="col-span-3 col-start-1 row-start-1 flex flex-col gap-2">
+            {attachments!.map((attachment, index) => (
+              <span className="attachment-chip flex min-h-9 items-center gap-2 rounded-full bg-muted px-3 py-1 text-sm text-foreground" key={`${attachment.name}:${index}`}>
+                {(() => {
+                  const icon = attachment.ref && isImageAttachment(attachment.ref)
+                    ? <AttachmentThumb cache={attachment.ref.cachePath!} name={attachment.name}
+                        className="size-6 shrink-0 rounded-md object-cover"
+                        fallbackClassName="grid size-6 shrink-0 place-items-center rounded-md bg-muted"/>
+                    : <FileTypeIcon className="size-4 shrink-0" filename={attachment.name}/>;
+                  return attachment.ref ? (
+                    <button className="flex min-w-0 flex-1 items-center gap-2 text-left underline decoration-transparent underline-offset-2 transition-colors hover:decoration-foreground" onClick={() => onOpenAttachment(attachment.ref!)} title={attachment.name} type="button">
+                      {icon}
+                      <span className="min-w-0 flex-1 truncate">{attachment.name}</span>
+                    </button>
+                  ) : (
+                    <>{icon}<span className="min-w-0 flex-1 truncate">{attachment.name}</span></>
+                  );
+                })()}
+                <Button aria-label={copy.removeAttachment} className="size-6 shrink-0 rounded-full" onClick={() => onRemoveAttachment(index)} size="icon-xs" type="button" variant="ghost">
+                  <XIcon aria-hidden="true" className="size-3.5"/>
+                </Button>
+              </span>
+            ))}
+          </div>
         )}
         <div className="col-start-1 row-start-2">
           <AttachmentsMenu
@@ -238,10 +243,11 @@ export function ProjectHome({project, chats, copy, busy, attachmentReady, attach
         <textarea
           aria-label={copy.web.startChatAction}
           className={`min-w-0 w-full resize-none overflow-x-hidden whitespace-pre-wrap break-words bg-transparent py-2 text-base leading-6 outline-none placeholder:text-muted-foreground ${
-            multiline && !attachmentName ? 'col-span-3 col-start-1 row-start-1 px-3' : 'col-start-2 row-start-2'
+            multiline && !attachments?.length ? 'col-span-3 col-start-1 row-start-1 px-3' : 'col-start-2 row-start-2'
           }`}
           maxLength={2000}
           onChange={event => setDraft(event.target.value)}
+          onPaste={onPasteImage}
           onKeyDown={event => {
             // 显式处理 Enter:IME 组合中的 Enter 不触发发送
             if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return;

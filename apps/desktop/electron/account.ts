@@ -1,14 +1,10 @@
-import {app,BrowserWindow,session} from 'electron';
+import {app,safeStorage,session,shell} from 'electron';
+import {accountAddress as address,beginAccountLogin,callbackCode,secretPattern,type PendingLogin} from './account-login';
 import {promises as fs} from 'node:fs';
 import path from 'node:path';
 import type {AccountStatus} from '../shared/types';
 
 const partition='persist:piwork-account';
-function address(value:string):string {
- const url=new URL(value.trim());
- if(url.username||url.password||url.search||url.hash||url.pathname!=='/'||!(url.protocol==='https:'||url.protocol==='http:'&&['localhost','127.0.0.1','[::1]'].includes(url.hostname)))throw new Error('Invalid account server');
- return url.origin;
-}
 const file=()=>path.join(app.getPath('userData'),'account-server.json');
 async function getAddress():Promise<string|null>{try{return address(JSON.parse(await fs.readFile(file(),'utf8')).baseUrl)}catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return null;throw error}}
 async function request(base:string,pathname:string,options:RequestInit={}){
@@ -16,7 +12,7 @@ async function request(base:string,pathname:string,options:RequestInit={}){
  if(!response.ok)throw new Error('Account request failed');
  return response.json();
 }
-export async function accountStatus():Promise<AccountStatus>{
+async function readAccountStatus():Promise<AccountStatus>{
  const baseUrl=await getAddress();if(!baseUrl)return {baseUrl:null,user:null,models:[]};
  const data=await request(baseUrl,'/api/auth/session');
  if(!data?.user||typeof data.user.id!=='string')return {baseUrl,user:null,models:[]};
@@ -24,15 +20,69 @@ export async function accountStatus():Promise<AccountStatus>{
  if(!Array.isArray(catalog?.models))throw new Error('Invalid model catalog');
  return {baseUrl,defaultModelId:typeof catalog.defaultModelId==='string'?catalog.defaultModelId:undefined,user:{id:data.user.id,name:typeof data.user.name==='string'?data.user.name:null,email:typeof data.user.email==='string'?data.user.email:null},models:catalog.models.filter((model:unknown):model is {id:string;name:string}=>!!model&&typeof model==='object'&&typeof (model as {id?:unknown}).id==='string'&&typeof (model as {name?:unknown}).name==='string').filter((model:{id:string})=>catalog.allowSwitch!==false||model.id===catalog.defaultModelId).map((model:{id:string;name:string;capabilities?:{vision?:boolean};providerKey?:unknown})=>({id:model.id,name:model.name,providerKey:typeof model.providerKey==='string'?model.providerKey:undefined,supportsImages:model.capabilities?.vision===true}))};
 }
-export async function openAccountLogin(parent:BrowserWindow,input:string){
- const baseUrl=address(input);await fs.mkdir(app.getPath('userData'),{recursive:true});await fs.writeFile(file()+'.tmp',JSON.stringify({baseUrl}),{mode:0o600});await fs.rename(file()+'.tmp',file());
- const child=new BrowserWindow({parent,width:520,height:720,webPreferences:{partition,contextIsolation:true,nodeIntegration:false,sandbox:true}});
- child.webContents.setWindowOpenHandler(()=>({action:'deny'}));
- const guard=(event:Electron.Event,url:string)=>{try{if(new URL(url).origin!==baseUrl)event.preventDefault()}catch{event.preventDefault()}};
- child.webContents.on('will-navigate',guard);child.webContents.on('will-redirect',guard);
- await child.loadURL(baseUrl+'/login');
+const pendingFile=()=>path.join(app.getPath('userData'),'account-login.pending');
+let loginFailed=false;
+let loginTimer:NodeJS.Timeout|undefined;
+let notifyLogin=()=>{};
+export function setAccountNotifier(notify:()=>void){notifyLogin=notify}
+async function cancelLogin(){if(loginTimer)clearTimeout(loginTimer);loginTimer=undefined;await fs.rm(pendingFile(),{force:true})}
+async function pendingLogin():Promise<PendingLogin|null>{
+ try {
+  const pending=JSON.parse(safeStorage.decryptString(await fs.readFile(pendingFile()))) as PendingLogin;
+  if(address(pending.baseUrl)!==pending.baseUrl||!secretPattern.test(pending.state)||!secretPattern.test(pending.verifier)||!Number.isFinite(pending.expiresAt)||pending.expiresAt>Date.now()+10*60*1000)throw new Error('Invalid pending login');
+  if(pending.expiresAt<=Date.now()){await cancelLogin();loginFailed=true;return null}
+  if(!loginTimer){loginTimer=setTimeout(()=>{void cancelLogin().then(()=>{loginFailed=true;notifyLogin()}).catch(()=>{})},pending.expiresAt-Date.now());loginTimer.unref()}
+  return pending;
+ }catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return null;throw error}
+}
+export async function accountStatus():Promise<AccountStatus>{
+ const pending=await pendingLogin();
+ return {...await readAccountStatus(),loginPending:!!pending,loginServer:pending?.baseUrl,loginFailed};
+}
+export async function openAccountLogin(input:string){
+ const {pending,url}=beginAccountLogin(input);
+ if(!safeStorage.isEncryptionAvailable())throw new Error('Secure storage unavailable');
+ await cancelLogin();loginFailed=false;
+ await fs.mkdir(app.getPath('userData'),{recursive:true});
+ await fs.writeFile(pendingFile(),safeStorage.encryptString(JSON.stringify(pending)),{mode:0o600});
+ await pendingLogin();
+ try{await shell.openExternal(url)}catch(error){await cancelLogin();loginFailed=true;notifyLogin();throw error}
+ notifyLogin();
+}
+/** Only the main process exchanges the code and owns the resulting HttpOnly cookie. */
+export async function completeAccountLogin(input:string,canChange:()=>Promise<void>):Promise<boolean>{
+ const pending=await pendingLogin();if(!pending)return false;
+ const code=callbackCode(input,pending);if(!code)return false;
+ try {
+  await canChange();
+  const response=await fetch(pending.baseUrl+'/api/auth/desktop/exchange',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({code,verifier:pending.verifier}),redirect:'error',signal:AbortSignal.timeout(10000)});
+  if(!response.ok)throw new Error('Login exchange failed');
+  const cookie=await response.json();
+  const secure=pending.baseUrl.startsWith('https:');
+  if(cookie.name!==`${secure?'__Secure-':''}authjs.session-token`||typeof cookie.value!=='string'||cookie.value.length>3800||!cookie.value||!Number.isFinite(cookie.expires)||cookie.expires<=Date.now()/1000||cookie.expires>Date.now()/1000+31*86400)throw new Error('Invalid session cookie');
+  // Recheck after the network request before replacing the account session.
+  await canChange();
+  const accountSession=session.fromPartition(partition);
+  const oldCookies=await accountSession.cookies.get({url:pending.baseUrl});
+  const oldServer=await getAddress();
+  try {
+   for(const old of oldCookies)if(old.name==='authjs.session-token'||old.name==='__Secure-authjs.session-token'||/^(?:__Secure-)?authjs\.session-token\.\d+$/.test(old.name))await accountSession.cookies.remove(pending.baseUrl,old.name);
+   await accountSession.cookies.set({url:pending.baseUrl,name:cookie.name,value:cookie.value,httpOnly:true,secure,sameSite:'lax',path:'/',expirationDate:cookie.expires});
+   const identity=await request(pending.baseUrl,'/api/auth/session');
+   if(typeof identity?.user?.id!=='string')throw new Error('Invalid account session');
+   await accountSession.cookies.flushStore();
+   await fs.writeFile(file()+'.tmp',JSON.stringify({baseUrl:pending.baseUrl}),{mode:0o600});await fs.rename(file()+'.tmp',file());
+  }catch(error){
+   await accountSession.cookies.remove(pending.baseUrl,cookie.name);
+   for(const old of oldCookies){const {hostOnly,session:sessionCookie,...stored}=old;await accountSession.cookies.set({...stored,url:pending.baseUrl}).catch(()=>{})}
+   throw error;
+  }
+  if(oldServer&&oldServer!==pending.baseUrl)await session.fromPartition(partition).clearStorageData({origin:oldServer,storages:['cookies']}).catch(()=>{});
+  loginFailed=false;await cancelLogin();notifyLogin();return true;
+ }catch{loginFailed=true;await cancelLogin();notifyLogin();return false}
 }
 export async function logoutAccount(){
+ await cancelLogin();loginFailed=false;notifyLogin();
  const baseUrl=await getAddress();if(!baseUrl)return;
  const data=await request(baseUrl,'/api/auth/csrf');
  if(typeof data?.csrfToken!=='string')throw new Error('Invalid CSRF token');

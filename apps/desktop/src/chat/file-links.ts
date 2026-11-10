@@ -60,3 +60,36 @@ export function projectDocumentPath(path:string,folders:{path:string;label:strin
   const folder=[...folders].sort((a,b)=>b.path.length-a.path.length).find(folder=>path.startsWith(folder.path.replace(/\/$/,'')+'/'));
   return folder?folder.label+'/'+path.slice(folder.path.replace(/\/$/,'').length+1):undefined;
 }
+
+/** Collect reply deliverables while leaving fenced examples and remote links alone. */
+export function documentReferences(text:string):string[]{
+  const paths=new Set<string>();
+  let fence:string|undefined;
+  const prose=text.split('\n').filter(line=>{
+    const match=/^\s*(`{3,}|~{3,})/.exec(line);
+    if(match){if(!fence)fence=match[1];else if(match[1][0]===fence[0]&&match[1].length>=fence.length)fence=undefined;return false}
+    return !fence;
+  }).join('\n');
+  const references=/\[[^\]]*\]\(<?([^>\n]+?)>?\)|`([^`\n]+)`|((?:^|(?<=[\s（(：:]))(?:\/?(?:[\p{L}\p{N}_~.-]+\/)+)[^\s`<>，。；;！!？?）)\[\]"']+\.[a-zA-Z0-9]+)/gu;
+  for(const match of prose.matchAll(references)){
+    const path=documentPath(match[1]??match[2]??match[3]);if(path)paths.add(path);
+  }
+  return [...paths];
+}
+
+export type DocumentFolder={path:string;label:string;main?:boolean};
+
+/** Keep one card when a reply and a tool use different paths for the same file. */
+export function uniqueDocumentPaths(paths:string[],folders:DocumentFolder[]=[]):string[]{
+  const seen=new Set<string>();
+  return paths.filter(value=>{
+    let key=value.replace(/^\.\//,'');
+    if(!key.startsWith('/')&&folders.length){
+      const folder=folders.find(folder=>key.startsWith(folder.label+'/'));
+      const root=folder??folders.find(folder=>folder.main)??folders[0];
+      key=root.path.replace(/\/$/,'')+'/'+(folder?key.slice(folder.label.length+1):key);
+    }
+    if(seen.has(key))return false;
+    seen.add(key);return true;
+  });
+}

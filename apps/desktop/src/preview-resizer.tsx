@@ -1,29 +1,42 @@
-import {useCallback,useEffect,useRef,useState,type PointerEvent as ReactPointerEvent,type KeyboardEvent as ReactKeyboardEvent} from 'react';
+import {useCallback,useLayoutEffect,useRef,useState,type PointerEvent as ReactPointerEvent,type KeyboardEvent as ReactKeyboardEvent} from 'react';
 
 /* 右侧预览面板拖拽调宽:左缘把手 + localStorage 持久化(参考 deepseek sidebar-right 的可调布局) */
 const STORAGE_KEY='piwork.preview-width';
 export const MIN_PREVIEW_WIDTH=360;
 const DEFAULT_PREVIEW_WIDTH=380;
 
-function maxWidth(){return Math.min(960,Math.round(window.innerWidth*.55))}
+function maxWidth(minChatWidth?:number){
+  if(minChatWidth===undefined)return Math.min(960,Math.round(window.innerWidth*.55));
+  const workspace=document.querySelector('.app');
+  const sidebar=workspace?.querySelector(':scope > .sidebar');
+  return (workspace?.clientWidth??window.innerWidth)-(sidebar?.getBoundingClientRect().width??260)-minChatWidth;
+}
 
-function clampWidth(value:number){return Math.min(Math.max(maxWidth(),MIN_PREVIEW_WIDTH),Math.max(MIN_PREVIEW_WIDTH,value))}
+function clampWidth(value:number,minChatWidth?:number){return Math.min(Math.max(maxWidth(minChatWidth),MIN_PREVIEW_WIDTH),Math.max(MIN_PREVIEW_WIDTH,value))}
 
-function loadWidth(){
+function loadWidth(minChatWidth?:number){
   const stored=Number(localStorage.getItem(STORAGE_KEY));
-  return Number.isFinite(stored)&&stored>=MIN_PREVIEW_WIDTH?clampWidth(stored):DEFAULT_PREVIEW_WIDTH;
+  return Number.isFinite(stored)&&stored>=MIN_PREVIEW_WIDTH?clampWidth(stored,minChatWidth):DEFAULT_PREVIEW_WIDTH;
 }
 
 /** 返回当前面板宽度与左缘拖拽把手;两处预览面板(聊天区/文档库)共用同一份持久化宽度。 */
-export function usePreviewWidth(){
-  const [width,setWidth]=useState(loadWidth);
+export function usePreviewWidth({minChatWidth}:{minChatWidth?:number}={}){
+  const [width,setWidth]=useState(()=>loadWidth(minChatWidth));
+  const [resizeHandle,setResizeHandle]=useState<HTMLDivElement|null>(null);
   const current=useRef(width);
   current.current=width;
-  useEffect(()=>{
-    const clamp=()=>setWidth(value=>Math.min(value,Math.max(maxWidth(),MIN_PREVIEW_WIDTH)));
+  useLayoutEffect(()=>{
+    const clamp=()=>setWidth(value=>clampWidth(value,minChatWidth));
+    clamp();
+    // Sidebar transitions also change the space available to the two panes.
+    const observer=new ResizeObserver(clamp);
+    const workspace=resizeHandle?.closest('.app');
+    const sidebar=workspace?.querySelector(':scope > .sidebar');
+    if(workspace)observer.observe(workspace);
+    if(sidebar)observer.observe(sidebar);
     window.addEventListener('resize',clamp);
-    return()=>window.removeEventListener('resize',clamp);
-  },[]);
+    return()=>{observer.disconnect();window.removeEventListener('resize',clamp)};
+  },[minChatWidth,resizeHandle]);
   function beginResize(event:ReactPointerEvent<HTMLDivElement>){
     event.preventDefault();
     const node=event.currentTarget;
@@ -33,7 +46,7 @@ export function usePreviewWidth(){
     let moved=false;
     const move=(moveEvent:PointerEvent)=>{
       moved=true;
-      setWidth(clampWidth(beginWidth+beginX-moveEvent.clientX));
+      setWidth(clampWidth(beginWidth+beginX-moveEvent.clientX,minChatWidth));
     };
     const finish=()=>{
       node.removeEventListener('pointermove',move);
@@ -49,12 +62,14 @@ export function usePreviewWidth(){
     const step=event.key==='ArrowLeft'?24:event.key==='ArrowRight'?-24:0;
     if(!step)return;
     event.preventDefault();
-    setWidth(clampWidth(current.current+step));
-    localStorage.setItem(STORAGE_KEY,String(clampWidth(current.current+step)));
+    const next=clampWidth(current.current+step,minChatWidth);
+    setWidth(next);
+    localStorage.setItem(STORAGE_KEY,String(next));
   }
   const resizer=<div
     aria-label="调整预览面板宽度 / Resize preview panel"
     className="preview-resizer"
+    ref={setResizeHandle}
     role="separator"
     aria-orientation="vertical"
     onKeyDown={nudge}

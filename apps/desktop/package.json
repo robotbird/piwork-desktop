@@ -143,6 +143,14 @@
         "from": "build/third-party",
         "to": "licenses"
       }
+    ],
+    "protocols": [
+      {
+        "name": "PiWork desktop sign-in",
+        "schemes": [
+          "piwork"
+        ]
+      }
     ]
   }
 }
