@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { Preferences, Project, ChatEvent, ChatChunkMessage, ChatSummary, PickedAttachment, LocalSkill, McpServer, McpInput, Schedule, ScheduleRun, ScheduleInput, ScheduleCreateRequest, ApprovalRequest, ApprovalDecision } from '../shared/types';
+import type { Preferences, Project, ChatEvent, ChatChunkMessage, ChatSummary, PickedAttachment, LocalSkill, McpServer, McpInput, Schedule, ScheduleRun, ScheduleInput, ScheduleCreateRequest, ApprovalRequest, ApprovalDecision, QuestionRequest, QuestionResponse } from '../shared/types';
 import { listProjectEntries, searchProjectEntries, splitProjectPath, resolveInside, saveProjectMarkdown, readProjectText, readProjectImage, readProjectPdf, readProjectDocx, readProjectXlsx, readProjectPptx, verifyImageBytes, imageExtension, type ProjectRoot } from './project-files';
 import { listLibrary, createLibraryFolder, saveLibraryNote, uploadLibraryFiles, renameLibraryItem, moveLibraryItem, registerAiFile, forgetLibraryItem, ensureLibrary } from './library-store';
 import {completeAccountLogin,setAccountNotifier,accountStatus,openAccountLogin,logoutAccount,accountSyncAvailable,accountSyncTransport,listWebHistory,readWebHistory,openWebHistory} from './account';
@@ -13,6 +13,7 @@ import {SettingsStorage} from './settings-storage';
 import {syncOneChat,prepareSyncRun} from './sync-engine';
 import {appendRemoteHistory} from './sync-pi-history';
 import {startAccountBridge} from './account-bridge';
+import {validateQuestionResponse} from './question-tools';
 import { validateGateway, type GatewayConfig } from './gateway';
 import { SessionManager, loadSkillsFromDir } from '@earendil-works/pi-coding-agent';
 import {addProjectTextAttachment,addPickedAttachment,readChatAttachment,type PickedAttachmentContent} from './chat-attachment';
@@ -107,6 +108,7 @@ function register(window:BrowserWindow){
      120 秒无响应自动拒绝并关闭弹窗(对齐 worker 侧审批超时) */
  type PendingApproval={settle:(allowed:boolean)=>void;key?:string;projectId?:string};
  const approvals=new Map<string,PendingApproval>();
+ const foregroundApprovalIds=new Set<string>();
  /* 项目级「始终允许」名单(settings.json 持久化):skill_bash 按命令全文、MCP 按工具名命中即放行 */
  const alwaysAllowed=(key:string|undefined,projectId:string|undefined)=>!!key&&!!projectId&&(state.approvalAllowlist?.[projectId]??[]).includes(key);
  const askApproval=(event:ApprovalRequest,projectId?:string):Promise<boolean>=>new Promise(resolve=>{
@@ -114,19 +116,28 @@ function register(window:BrowserWindow){
   if(window.isDestroyed()){resolve(false);return}
   let settled=false;const settle=(allowed:boolean)=>{if(settled)return;settled=true;clearTimeout(timer);approvals.delete(event.id);resolve(allowed)};
   const timer=setTimeout(()=>{settle(false);if(!window.isDestroyed())window.webContents.send('approval:closed',event.id)},120000);
-  approvals.set(event.id,{settle,...(event.key?{key:event.key}:{}),...(projectId?{projectId}:{})});window.webContents.send('approval:request',event);
+  approvals.set(event.id,{settle,...(event.key?{key:event.key}:{}),...(projectId?{projectId}:{})});window.webContents.send('approval:request',{...event,key:projectId?event.key:undefined});
  });
  const denyApproval=(id:string)=>{const pending=approvals.get(id);if(pending){approvals.delete(id);pending.settle(false);if(!window.isDestroyed())window.webContents.send('approval:closed',id)}};
+ const denyForegroundApprovals=()=>{for(const id of foregroundApprovalIds)denyApproval(id);foregroundApprovalIds.clear()};
  const denyApprovals=()=>{for(const id of [...approvals.keys()])denyApproval(id)};
+ const questions=new Map<string,{request:QuestionRequest;settle:(response:QuestionResponse)=>void}>();
+ const askQuestions=(request:QuestionRequest):Promise<QuestionResponse>=>new Promise(resolve=>{
+  if(window.isDestroyed()){resolve({answers:{},cancelled:true});return}
+  const settle=(response:QuestionResponse)=>{clearTimeout(timer);questions.delete(request.id);lastWorkerActivity=Date.now();if(!window.isDestroyed())window.webContents.send('question:closed',request.id);resolve(response)};
+  const timer=setTimeout(()=>settle({answers:{},cancelled:true}),600000);
+  questions.set(request.id,{request,settle});window.webContents.send('question:request',request);
+ });
+ const cancelQuestions=()=>{for(const pending of questions.values())pending.settle({answers:{},cancelled:true})};
  const disposeWorker=(child:Electron.UtilityProcess)=>{try{child.postMessage({type:'dispose'});const timer=setTimeout(()=>child.kill(),3000);timer.unref();child.once('exit',()=>clearTimeout(timer))}catch{child.kill()}};
- const stopWorker=()=>{const old=worker;worker=null;accountBridge?.close();accountBridge=null;activeModelKey=null;activeSkillId=null;activeMcpId=null;busy=false;lastWorkerActivity=0;runningToolIds.clear();denyApprovals();if(old)disposeWorker(old)};
+ const stopWorker=()=>{const old=worker;worker=null;accountBridge?.close();accountBridge=null;activeModelKey=null;activeSkillId=null;activeMcpId=null;busy=false;lastWorkerActivity=0;runningToolIds.clear();denyApprovals();cancelQuestions();if(old)disposeWorker(old)};
  // 推理看门狗:上游网关或插件工具长时间无任何事件时中止 worker,
  // 避免会话 busy 永久卡死(全链路无超时兜底时后续发送都会被 Session busy 拦截)。
  // 工具执行中允许更长的静默期(pi 的 bash 无默认超时,venv/pip 等安装可能 5 分钟以上无输出):
  // 预算分级——工具运行中 15 分钟,其余 5 分钟
  const runningToolIds=new Set<string>();
  let lastWorkerActivity=0;let abortRequested=false;
- const watchdogTimer=setInterval(()=>{if(!busy||!worker)return;if(!lastWorkerActivity){lastWorkerActivity=Date.now();return}
+ const watchdogTimer=setInterval(()=>{if(!busy||!worker||questions.size)return;if(!lastWorkerActivity){lastWorkerActivity=Date.now();return}
   const idle=Date.now()-lastWorkerActivity;
   const softLimit=runningToolIds.size>0?900000:300000;
   if(idle>softLimit+30000){stopWorker();emit({type:'failed',message:'Agent response timed out'});setImmediate(()=>void synchronize());return}
@@ -189,6 +200,11 @@ function register(window:BrowserWindow){
    void update(current=>({...current,approvalAllowlist:{...current.approvalAllowlist,[projectId]:[key,...(current.approvalAllowlist?.[projectId]??[])].filter((item,index,list)=>list.indexOf(item)===index).slice(0,200)}})).catch(()=>{});
   }
   pending.settle(decision!=='deny');
+ });
+ handle('question:respond',(id:string,response:unknown)=>{
+  if(typeof id!=='string')return;
+  const pending=questions.get(id);if(!pending)return;
+  pending.settle(validateQuestionResponse(pending.request.questions,response));
  });
  handle('skills:read',async(id:string)=>{if(!isChatId(id))throw new Error('Invalid skill');const skill=(state.skills??[]).find(item=>item.id===id);if(!skill)throw new Error('Skill unavailable');return readProjectText(path.dirname(skill.filePath),path.basename(skill.filePath))});
  handle('skills:import',async()=>{const result=await dialog.showOpenDialog(window,{properties:['openDirectory']});if(result.canceled||!result.filePaths[0])return null;const dir=await fs.realpath(result.filePaths[0]);const loaded=loadSkillsFromDir({dir,source:'local'});const valid=loaded.skills.filter(skill=>skill.name&&skill.filePath);let added=0,duplicates=0;await update(current=>{const skills=[...(current.skills??[])];for(const skill of valid){if(skills.some(existing=>existing.filePath===skill.filePath||existing.name===skill.name)){duplicates++;continue}skills.push({id:randomUUID(),name:skill.name,description:skill.description,filePath:skill.filePath,enabled:true,source:'local'});added++}return {...current,skills}});return {added,duplicates,warnings:loaded.diagnostics.length}});
@@ -350,13 +366,13 @@ function register(window:BrowserWindow){
   await fs.mkdir(sessionDir,{recursive:true,mode:0o700});
   if(experimentalSync&&state.preferences.syncEnabled){syncPreparing=true;try{const account=await currentSyncAccount();const existing=(await syncJournal.list(account)).find(item=>item.chatId===activeChatId);if(!existing&&activeChat&&await fs.access(sessionFile(activeChatId)).then(()=>true).catch(()=>false))throw new Error('Sync only supports new chats');await prepareSyncRun({journal:syncJournal,account,chatId:activeChatId,title:activeChat?.title??text.trim().slice(0,80),text,transport:accountSyncTransport(account),isBusy:()=>false,appendRemote:items=>appendRemote(activeChatId!,items)});foregroundSync=account;busy=true;syncState='syncing';notifySync()}catch(error){if(error instanceof Error&&error.message==='Sync only supports new chats')throw error;const conflict=error instanceof Error&&error.message==='Sync conflict';const running=error instanceof Error&&error.message==='Sync task running';syncState=running?'pending':conflict?'conflict':'unavailable';notifySync();throw new Error(running?'Sync task running':conflict?'Sync conflict':'Sync unavailable')}finally{syncPreparing=false;busy=true;flushSyncHistory()}}
   if(source==='account'){if(!accountBridge)accountBridge=await startAccountBridge(binding.baseUrl,binding.id,status=>{accountFailure=status});accountFailure=null;accountBridge.newRun();gateway={baseUrl:accountBridge.baseUrl,modelId:binding.id};key=accountBridge.apiKey}activeModelKey=modelKey;
-  if(!worker){const child=utilityProcess.fork(path.join(dirname,'chat-worker.js'),[],{stdio:'ignore'});worker=child;activeSkillId=skillId;activeMcpId=mcpId;child.on('message',async(event:ChatEvent|ChatChunkMessage|ScheduleCreateRequest)=>{if(worker!==child)return;lastWorkerActivity=Date.now();abortRequested=false;if(event.type==='tool'){if(event.status==='running')runningToolIds.add(event.id);else runningToolIds.delete(event.id)}if(event.type==='schedule:create'){try{await createScheduleRecord({name:event.input.taskType,prompt:event.input.prompt,cron:event.input.cron,timezone:event.input.timezone,projectId:null,skillId:null,mcpId:null});child.postMessage({type:'schedule:result',id:event.id,ok:true})}catch(error){child.postMessage({type:'schedule:result',id:event.id,ok:false,error:error instanceof Error?error.message:'Schedule create failed'})}return}if(event.type==='chunk'){if(!window.isDestroyed())window.webContents.send('chat:chunk',event);return}if(event.type==='approval'){const chatProject=(state.chats??[]).find(chat=>chat.id===activeChatId)?.projectId??undefined;void askApproval(event,chatProject).then(allowed=>{if(worker===child)child.postMessage({type:'approval',id:event.id,allowed})});return}if(event.type==='completed'||event.type==='failed'||event.type==='aborted'){await finishForegroundSync(event.type==='completed'?'completed':event.type==='aborted'?'aborted':'failed',event.type==='completed'?event.text:undefined);busy=false;setImmediate(()=>void synchronize());const id=activeChatId;if(id)await update(current=>({...current,chats:(current.chats??[]).map(chat=>chat.id===id?{...chat,updatedAt:Date.now()}:chat)})).catch(()=>{});if(worker!==child)return}emit(event.type==='failed'&&accountFailure?{type:'failed',message:`account:${accountFailure}`} : event)});child.on('exit',async()=>{if(worker!==child)return;worker=null;denyApprovals();if(busy){await finishForegroundSync('failed');busy=false;setImmediate(()=>void synchronize());emit({type:'failed',message:'Agent process stopped'})}});child.postMessage({type:'start',gateway:{baseUrl:gateway.baseUrl,modelId:gateway.modelId,apiKey:key,supportsImages,...(source==='account'?{api:'pi-messages'}:{})},cwd:app.getPath('userData'),agentDir:piAgentDir(),sessionFile:sessionFile(activeChatId),...(roots.length?{projectFolders:roots}:{}),...(mcp?{mcp}:{}),...(skill?{skill:{name:skill.name,filePath:skill.filePath}}:{}),text:promptText,images,allowScheduleTools:true,permission:state.preferences.permission??'confirm'})}
+  if(!worker){const child=utilityProcess.fork(path.join(dirname,'chat-worker.js'),[],{stdio:'ignore'});worker=child;activeSkillId=skillId;activeMcpId=mcpId;child.on('message',async(event:ChatEvent|ChatChunkMessage|ScheduleCreateRequest|QuestionRequest)=>{if(worker!==child)return;lastWorkerActivity=Date.now();abortRequested=false;if(event.type==='tool'){if(event.status==='running')runningToolIds.add(event.id);else runningToolIds.delete(event.id)}if(event.type==='question'){void askQuestions(event).then(response=>{if(worker===child)child.postMessage({type:'question:response',id:event.id,response})});return}if(event.type==='schedule:create'){try{await createScheduleRecord({name:event.input.taskType,prompt:event.input.prompt,cron:event.input.cron,timezone:event.input.timezone,projectId:null,skillId:null,mcpId:null});child.postMessage({type:'schedule:result',id:event.id,ok:true})}catch(error){child.postMessage({type:'schedule:result',id:event.id,ok:false,error:error instanceof Error?error.message:'Schedule create failed'})}return}if(event.type==='chunk'){if(!window.isDestroyed())window.webContents.send('chat:chunk',event);return}if(event.type==='approval'){foregroundApprovalIds.add(event.id);const chatProject=(state.chats??[]).find(chat=>chat.id===activeChatId)?.projectId??undefined;void askApproval(event,chatProject).then(allowed=>{foregroundApprovalIds.delete(event.id);if(worker===child)child.postMessage({type:'approval',id:event.id,allowed})});return}if(event.type==='completed'||event.type==='failed'||event.type==='aborted'){cancelQuestions();denyForegroundApprovals();await finishForegroundSync(event.type==='completed'?'completed':event.type==='aborted'?'aborted':'failed',event.type==='completed'?event.text:undefined);busy=false;setImmediate(()=>void synchronize());const id=activeChatId;if(id)await update(current=>({...current,chats:(current.chats??[]).map(chat=>chat.id===id?{...chat,updatedAt:Date.now()}:chat)})).catch(()=>{});if(worker!==child)return}emit(event.type==='failed'&&accountFailure?{type:'failed',message:`account:${accountFailure}`} : event)});child.on('exit',async()=>{if(worker!==child)return;worker=null;denyApprovals();cancelQuestions();if(busy){await finishForegroundSync('failed');busy=false;setImmediate(()=>void synchronize());emit({type:'failed',message:'Agent process stopped'})}});child.postMessage({type:'start',gateway:{baseUrl:gateway.baseUrl,modelId:gateway.modelId,apiKey:key,supportsImages,...(source==='account'?{api:'pi-messages'}:{})},cwd:app.getPath('userData'),agentDir:piAgentDir(),sessionFile:sessionFile(activeChatId),...(roots.length?{projectFolders:roots}:{}),...(mcp?{mcp}:{}),...(skill?{skill:{name:skill.name,filePath:skill.filePath}}:{}),text:promptText,images,allowScheduleTools:true,allowUserQuestions:true,permission:state.preferences.permission??'confirm'})}
   else worker.postMessage({type:'prompt',text:promptText,images,...(skill?{skillName:skill.name}:{})});
   if(usedTokens.size)pickedAttachments=pickedAttachments.filter(entry=>!usedTokens.has(entry.info.token));
   return activeChatId;
   }catch(error){if(foregroundSync)await finishForegroundSync('failed');if(!worker){accountBridge?.close();accountBridge=null;activeModelKey=null}busy=false;setImmediate(()=>void synchronize());throw error}
  });
- handle('chat:stop',()=>{if(worker&&busy)worker.postMessage({type:'abort'})});
+ handle('chat:stop',()=>{if(worker&&busy){worker.postMessage({type:'abort'});denyForegroundApprovals();cancelQuestions()}});
  handle('chat:clear',()=>{if(syncWorking||syncPreparing||foregroundSync&&busy)throw new Error('Sync run active');resetChat()});
  handle('chat:list',()=>[...(state.chats??[])].sort((a,b)=>b.updatedAt-a.updatedAt));
  handle('chat:open',async(id:string)=>{if(!isChatId(id)||!(state.chats??[]).some(chat=>chat.id===id))throw new Error('Chat not found');if(busy||syncWorking||syncPreparing)throw new Error('Chat busy');const file=sessionFile(id);await fs.access(file);const manager=SessionManager.open(file,sessionDir,app.getPath('userData'));const context=manager.buildSessionContext();const timings=new Map<number,{startedAt:number;durationMs:number}>();for(const entry of manager.getBranch()){if(entry.type==='custom'&&entry.customType==='piwork:turn-timing'){const data=entry.data as {userTimestamp?:number;startedAt?:number;durationMs?:number}|undefined;if(data&&typeof data.userTimestamp==='number'&&typeof data.startedAt==='number'&&typeof data.durationMs==='number')timings.set(data.userTimestamp,{startedAt:data.startedAt,durationMs:data.durationMs})}}const messages=projectChatHistory(context.messages,timings);stopWorker();if(activeChatId!==id)pickedAttachments=[];activeChatId=id;return {messages,toolEvents:messages.flatMap(message=>message.toolEvents??[]),projectId:(state.chats??[]).find(chat=>chat.id===id)?.projectId??null,modelBinding:(state.chats??[]).find(chat=>chat.id===id)?.modelBinding}});

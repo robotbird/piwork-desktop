@@ -262,7 +262,9 @@ main.home .composer-shell {
   border: 1px solid var(--hairline);
   border-radius: 28px;
 }
-.composer textarea {
+.composer-input { position: relative; min-width: 0; }
+.composer textarea,
+.composer-highlight {
   display: block;
   field-sizing: content;
   min-height: 64px;
@@ -273,6 +275,20 @@ main.home .composer-shell {
   line-height: 24px;
   outline: none;
 }
+.composer-highlight {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  pointer-events: none;
+}
+.composer-input[data-has-skill] textarea { color: transparent; caret-color: var(--foreground); }
+.composer-input[data-has-skill] textarea::selection { color: transparent; background: rgb(59 130 246 / .2); }
+.composer-skill-mention { color: #1e40af; }
+.composer-skill-icon { position: relative; }
+.composer-skill-icon svg { position: absolute; left: 0; top: 50%; transform: translateY(-50%); }
+.dark .composer-skill-mention { color: #93b4ff; }
 .openai-composer > .composer[data-slot="input-group"]:focus-within {
   border-color: var(--hairline);
 }

@@ -15,6 +15,7 @@
     "test:project-agent": "pnpm build && node tests/project-agent-e2e.mjs",
     "test:processing": "pnpm build && node tests/processing-e2e.mjs",
     "test:chat-interaction": "pnpm build && node tests/chat-interaction-e2e.mjs",
+    "test:composer-slash": "pnpm build && node tests/composer-slash-e2e.mjs",
     "test:attachment-preview": "pnpm build && node tests/chat-attachment-preview-e2e.mjs",
     "test:clipboard-paste": "pnpm build && node tests/clipboard-paste-e2e.mjs",
     "test:desktop": "pnpm build && node tests/desktop-e2e.mjs",

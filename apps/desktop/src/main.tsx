@@ -1,7 +1,7 @@
 import {projectDocumentPath} from './chat/file-links';
-import React, {lazy,Suspense,useEffect,useRef,useState} from 'react';
+import React, {lazy,Suspense,useEffect,useLayoutEffect,useRef,useState} from 'react';
 import {createRoot} from 'react-dom/client';
-import type {Preferences, Project, ProjectFile, GatewayConfig, ChatSummary, LocalSkill, AccountStatus, PickedAttachment, ChatMessage, ChatAttachmentRef, ApprovalRequest, ApprovalDecision, ToolEvent} from '../shared/types';
+import type {Preferences, Project, ProjectFile, GatewayConfig, ChatSummary, LocalSkill, AccountStatus, PickedAttachment, ChatMessage, ChatAttachmentRef, ApprovalDecision, QuestionResponse, ToolEvent} from '../shared/types';
 import {PreviewDock,type DockFile,type DockTab} from './preview-dock';
 import {usePreviewWidth,usePreviewCollapse} from './preview-resizer';
 import {Skills} from './skills';
@@ -12,13 +12,13 @@ import {libraryStrings} from './documents/strings';
 import {Toaster,toast} from 'sonner';
 import {SettingsPage,type SettingsSectionId} from './settings';
 import {WebHistory} from './web-history';
-import {BoxIcon,LogOutIcon,MoonIcon,Settings2Icon,SquarePenIcon,FileTextIcon,Clock3Icon,Grid2X2Icon,FolderIcon,SearchIcon,PanelLeftCloseIcon,PanelLeftOpenIcon,ShieldAlertIcon,SettingsIcon,PlugIcon,PlusIcon,SunIcon,ChevronUpIcon,ChevronRightIcon,UserRoundIcon,XIcon,PencilIcon,PanelRightIcon,ArrowUpCircleIcon} from 'lucide-react';
+import {BoxIcon,LogOutIcon,MoonIcon,Settings2Icon,SquarePenIcon,FileTextIcon,Clock3Icon,Grid2X2Icon,FolderIcon,SearchIcon,PanelLeftCloseIcon,PanelLeftOpenIcon,SettingsIcon,PlugIcon,PlusIcon,SunIcon,ChevronUpIcon,ChevronRightIcon,UserRoundIcon,XIcon,PencilIcon,PanelRightIcon,ArrowUpCircleIcon} from 'lucide-react';
 import {cn} from '@/lib/utils';
 import {DropdownMenu,DropdownMenuContent,DropdownMenuItem,DropdownMenuLabel,DropdownMenuSeparator,DropdownMenuTrigger} from '@/components/ui/dropdown-menu';
 import {Button} from '@/components/ui/button';
-import {Dialog,DialogContent,DialogDescription,DialogHeader,DialogTitle} from '@/components/ui/dialog';
 import {ArrowUpIcon, StopIcon} from '@/components/chat/icons';
 import {FileTypeIcon} from '@/components/documents/file-type-icon';
+import {PendingInteractionDock,usePendingInteractions} from './chat/pending-interactions';
 import {Conversation} from './chat/conversation';
 import {AttachmentChip} from './chat/attachment-chip';
 import {Lightbox,type LightboxState} from './lightbox';
@@ -42,59 +42,57 @@ const attachmentReadError={
 /* 读取粘贴的图片文件为 base64(readAsDataURL 结果截去 data: 前缀) */
 function readFileAsBase64(file:File):Promise<string>{return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>{const result=String(reader.result);resolve(result.slice(result.indexOf(',')+1))};reader.onerror=()=>reject(reader.error);reader.readAsDataURL(file)})}
 const words={ 'zh-CN':{newChat:'新对话',chooseProject:'项目',addFile:'添加文件',addCapabilities:'添加内容与能力',model:'模型',configureModels:'配置模型…',documents:'我的文档',searchChats:'搜索对话',collapseSidebar:'收起侧栏',expandSidebar:'展开侧栏',projects:'项目',createProject:'创建项目',projectFolder:'项目文件夹',existingProject:'该目录已存在项目，已切换到已有项目。',cancel:'取消',editProject:'编辑项目',projectName:'项目名称',projectDescription:'项目说明',projectSaveFailed:'保存项目失败，请检查名称和说明。',searchFiles:'搜索项目文件名',searchHint:'最多显示 100 条结果，搜索前 10000 个文件及目录。',noMatches:'没有匹配的文件',projectAccessFailed:'无法读取此项目目录，请检查目录是否存在及访问权限。',toolRunning:'执行中',toolCompleted:'已完成',toolFailed:'执行失败',toolDenied:'用户未批准或已取消',toolChanged:'文件已变化，请重新执行',toolInvalid:'文件路径或类型不受支持',toolError:'请检查文件或工具配置',toolBash:'执行本机命令',toolSkillRead:'读取技能资源',toolList:'浏览项目文件',toolRead:'读取项目文件',toolWrite:'写入项目文件',toolOffice:'生成 Office 文件',toolActivity:'工具执行',toolInterrupted:'未完成',toolParams:'参数',toolOutput:'输出',toolExpandAll:'全部展开',toolCollapseAll:'全部收起',toolShowLess:'收起',toolMoreLines:'…还有 {n} 行',permissionLabel:'权限',permConfirm:'变更前确认',permConfirmHint:'执行命令、写入文件前先问我',permAuto:'自主模式',permAutoHint:'命令自动执行，仅写入文件时确认',permFull:'完全访问',permFullHint:'自动批准所有工具执行，不再弹出确认',projectContextNoticeFull:'任务可读取项目文本、PDF、Office 文字及已启用的图片并发送给模型。',toolGroupBrowse:'查阅',toolGroupRun:'执行',toolGroupWrite:'写入',toolGroupFiles:'文件',toolGroupSearches:'次搜索',toolGroupFetches:'次网页抓取',toolGroupCommands:'条命令',toolGroupWrites:'次写入',toolGroupCalls:'次调用',unexecutedToolRequest:'模型返回了工具请求文本，未执行任何工具。',missingProjectToolHint:'如需读取本地目录，请在新对话中选择项目，或通过加号添加相关文件。',recent:'最近对话',empty:'选择一个项目，开始工作',description:'添加本地文件夹，整理资料并开展任务。',add:'添加项目',settings:'设置',updateBanner:'新版本 {version}',accountAndSync:'账号与同步',modelGateway:'模型网关',piPlugins:'插件管理',skills:'技能',noSkill:'不使用技能',schedules:'定时任务',appearance:'外观',language:'语言',system:'跟随系统',light:'浅色',dark:'深色',close:'关闭',unavailable:'目录不可用',rebind:'重新选择文件夹',rebindFailed:'无法绑定文件夹，请检查是否已被其他项目使用。',remove:'移除项目',confirm:'仅从列表中移除项目，不会删除本地文件。确定移除？',failed:'操作失败，请重试。',placeholder:'描述你想完成的任务…',soon:'对话功能正在开发中',title:'工作空间',projectMissing:'关联项目已移除',originalProjectPath:'此对话使用原项目目录：',projectContextNotice:'任务可读取项目文本、PDF、Office 文字及已启用的图片并发送给模型；写入前需要确认。',attach:'加入对话',attached:'已选择文件，发送时将其文本或图片提交给当前模型；过长内容将自动截断。',removeAttachment:'移除附件',attachmentLimit:'一次最多发送 10 个附件。',attachmentFailed:'发送失败，请检查附件类型（文本、PDF、Office 文档或图片）及网关配置。',send:'发送',stop:'停止',chatFailed:'对话未能完成，请检查模型网关、所选技能或 MCP 配置。',sessionBusy:'上一个请求仍在进行中。请点停止按钮结束，或稍候重试。',syncSendUnavailable:'无法连接同步服务或确认任务状态。草稿已保留，请检查网络和登录后重试。',syncSendConflict:'两端对话记录不一致，请检查 Web 对话；草稿已保留。',syncSendBusy:'同步正在进行，请稍后重试；草稿已保留。',syncTaskRunning:'此对话正在另一端执行，请等待任务结束后重试；草稿已保留。',syncOldChat:'同步仅支持新对话；请关闭同步后继续此对话，或创建新对话。',accountQuota:'账号用量已达限制，请联系管理员。',accountForbidden:'账号无权使用此模型。',accountExpired:'账号登录已失效，请重新登录。',historyFailed:'无法打开对话记录，文件可能不存在或已损坏。',renameChat:'重命名对话',deleteChat:'删除对话',deleteChatConfirm:'删除这条对话？本地会话文件将移入应用回收目录。',aborted:'已停止',configure:'请先在设置中配置模型网关。',gateway:'自定义模型网关',gatewayUrl:'网关地址',modelId:'模型 ID',apiKey:'API Key',imageSupport:'模型支持图片输入',keyHint:'已保存；留空保持不变',save:'保存',gatewaySaved:'网关配置已保存',gatewayFail:'保存失败，请检查地址和系统安全存储。',openExternal:'用默认应用打开',reveal:'在访达中显示',openFailed:'无法打开文件，请检查文件是否存在及系统权限。',unsupported:'此文件暂不支持预览，可尝试用系统应用打开。',saveAnswer:'保存为 Markdown',saveHtml:'保存 HTML 文件',htmlSaved:'HTML 文件已保存',htmlSaveFailed:'无法保存 HTML 文件，请选择新的 .html 文件名。',saveAnswerFailed:'保存失败：请选择新的 .md 文件名，并检查目录权限。',files:'项目文件',up:'上一级',loading:'正在加载…',emptyFolder:'文件夹为空',preview:'文件预览',guideStart:'开始',newTab:'新建标签',closeTab:'关闭标签',collapsePreview:'收起侧边栏',expandPreview:'打开侧边栏',fullscreenPreview:'全屏预览',exitFullscreenPreview:'退出全屏',fileUnavailable:'文件不存在或没有访问权限，请检查文件位置和权限。',fileError:'无法预览此文件。支持 1 MB 以内的文本和 10 MB 以内的常见图片和 20 MB 以内的 PDF、DOCX、XLSX 和 PPTX。',sourceFolders:'源文件夹',addFromComputer:'在此电脑上添加文件夹',addFolder:'添加文件夹',mainBadge:'主要',setMain:'设为主要',removeFolder:'移除文件夹',removeLocalProject:'移除本地项目',writeHint:'所有源文件夹均可读取；文件仅写入主文件夹。'},en:{syncSendUnavailable:'Cannot reach the sync service or confirm the task state. Your draft is preserved; check your connection and sign-in.',syncSendConflict:'The conversation histories differ. Check the Web conversation; your draft is preserved.',syncSendBusy:'Sync is in progress. Try again; your draft is preserved.',syncTaskRunning:'This conversation is running on another device. Wait for it to finish; your draft is preserved.',syncOldChat:'Sync supports new conversations only. Turn off sync to continue this chat, or start a new one.',newChat:'New chat',chooseProject:'Project',addFile:'Add file',addCapabilities:'Add content and capabilities',model:'Model',configureModels:'Configure model…',documents:'My documents',searchChats:'Search chats',collapseSidebar:'Collapse sidebar',expandSidebar:'Expand sidebar',projects:'Projects',createProject:'Create project',projectFolder:'Project folder',existingProject:'This folder already belongs to a project. Switched to the existing project.',cancel:'Cancel',editProject:'Edit project',projectName:'Project name',projectDescription:'Description',projectSaveFailed:'Could not save project. Check the name and description.',searchFiles:'Search project filenames',searchHint:'Shows up to 100 matches from the first 10,000 files and folders.',noMatches:'No matching files',projectAccessFailed:'Cannot read this project folder. Check that it exists and is accessible.',toolRunning:'Running',toolCompleted:'Completed',toolFailed:'Failed',toolDenied:'Not approved or cancelled',toolChanged:'File changed; try again',toolInvalid:'Unsupported file path or type',toolError:'Check the file or tool configuration',toolBash:'Run local command',toolSkillRead:'Read skill resource',toolList:'List project files',toolRead:'Read project file',toolWrite:'Write project file',toolOffice:'Create Office file',toolActivity:'Tool activity',toolInterrupted:'Interrupted',toolParams:'Input',toolOutput:'Output',toolExpandAll:'Expand all',toolCollapseAll:'Collapse all',toolShowLess:'Show less',toolMoreLines:'…{n} more lines',permissionLabel:'Permissions',permConfirm:'Confirm before changes',permConfirmHint:'Ask me before running commands or writing files',permAuto:'Autonomous',permAutoHint:'Run commands automatically; confirm file writes only',permFull:'Full access',permFullHint:'Approve every tool call without asking',projectContextNoticeFull:'The task may send project text, PDFs, Office document text and enabled images to the model.',toolGroupBrowse:'Consult',toolGroupRun:'Run',toolGroupWrite:'Write',toolGroupFiles:'files',toolGroupSearches:'searches',toolGroupFetches:'web fetches',toolGroupCommands:'commands',toolGroupWrites:'writes',toolGroupCalls:'calls',unexecutedToolRequest:'The model returned a tool request as text. No tools ran.',missingProjectToolHint:'To use local files, select a project in a new chat or attach the files using the add button.',recent:'Recent chats',empty:'Choose a project to get started',description:'Add a local folder to organize your work.',add:'Add project',settings:'Settings',updateBanner:'New version {version}',accountAndSync:'Account & sync',modelGateway:'Model gateway',piPlugins:'Plugins',skills:'Skills',noSkill:'No skill',schedules:'Scheduled tasks',appearance:'Appearance',language:'Language',system:'System',light:'Light',dark:'Dark',close:'Close',unavailable:'Folder unavailable',rebind:'Choose folder again',rebindFailed:'Unable to bind folder. It may already belong to another project.',remove:'Remove project',confirm:'Remove this project from the list? Local files will not be deleted.',failed:'Something went wrong. Please try again.',placeholder:'Describe what you want to do…',soon:'Chat is coming soon',title:'Workspace',projectMissing:'Linked project removed',originalProjectPath:'This chat uses its original project folder: ',projectContextNotice:'The task may send project text, PDFs, Office document text and enabled images to the model; writing requires confirmation.',attach:'Add to chat',attached:'The selected file will be sent to the current model as text or an image; long content is truncated automatically.',removeAttachment:'Remove attachment',attachmentLimit:'Up to 10 attachments can be sent per message.',attachmentFailed:'Send failed. Check the attachment type (text, PDF, Office document or image) and the gateway.',send:'Send',stop:'Stop',chatFailed:'Chat could not finish. Check the model gateway, selected skill or MCP settings.',sessionBusy:'A request is still running. Press stop to end it, or retry shortly.',accountQuota:'Account usage limit reached. Contact an administrator.',accountForbidden:'Your account cannot use this model.',accountExpired:'Your account session has expired. Sign in again.',historyFailed:'Cannot open this chat. Its file may be missing or damaged.',renameChat:'Rename chat',deleteChat:'Delete chat',deleteChatConfirm:'Delete this chat? Its local session file will be moved to the application trash.',aborted:'Stopped',configure:'Configure a model gateway in Settings first.',gateway:'Custom model gateway',gatewayUrl:'Gateway URL',modelId:'Model ID',apiKey:'API key',imageSupport:'Model supports image input',keyHint:'Saved; leave blank to keep',save:'Save',gatewaySaved:'Gateway saved',gatewayFail:'Could not save. Check the URL and system secure storage.',openExternal:'Open with default app',reveal:'Show in Finder',openFailed:'Cannot open the file. Check that it exists and is accessible.',unsupported:'Preview is unavailable. Try opening it with a system app.',saveAnswer:'Save as Markdown',saveHtml:'Save HTML file',htmlSaved:'HTML file saved',htmlSaveFailed:'Could not save the HTML file. Choose a new .html filename.',saveAnswerFailed:'Save failed. Choose a new .md filename and check folder permissions.',files:'Project files',up:'Up',loading:'Loading…',emptyFolder:'This folder is empty',preview:'File preview',guideStart:'Start',newTab:'New tab',closeTab:'Close tab',collapsePreview:'Collapse sidebar',expandPreview:'Open sidebar',fullscreenPreview:'Fullscreen preview',exitFullscreenPreview:'Exit fullscreen',fileUnavailable:'The file is missing or inaccessible. Check its location and permissions.',fileError:'Cannot preview this file. Text files up to 1 MB and common images up to 10 MB and PDF, DOCX, XLSX and PPTX files up to 20 MB are supported.',sourceFolders:'Source folders',addFromComputer:'Add a folder from this computer',addFolder:'Add folder',mainBadge:'Main',setMain:'Set as main',removeFolder:'Remove folder',removeLocalProject:'Remove local project',writeHint:'Every source folder is readable; files are written only to the main folder.'}} as const;
-/* 工具审批弹窗(ZCode 式选项列表):内容预览 + 允许一次/始终允许(项目内)/完全访问/拒绝 */
-function ApprovalDialog({language,request,onRespond,onFullAccess}:{language:'zh-CN'|'en';request:ApprovalRequest|null;onRespond:(id:string,decision:ApprovalDecision)=>void;onFullAccess:(id:string)=>void}){
- const zh=language==='zh-CN';const name=request?.name??'';
- const title=name==='skill_bash'?(zh?'本机命令确认':'Local command'):name.startsWith('project_')?(zh?'文件操作确认':'File operation'):name||'MCP';
- const description=name==='skill_bash'?(zh?'命令将在本机执行，不受系统沙箱限制，可访问当前用户有权访问的文件和网络。请确认命令内容。':'This command runs on your Mac without OS sandboxing and can access files and network available to your user. Review it before allowing.'):name.startsWith('project_')?(zh?'模型请求读写项目文件，写入前需要确认。请检查操作内容。':'The model wants to read or write project files. Review the request before allowing.'):(zh?'外部 MCP 服务请求在本机执行，请确认输入内容。':'An external MCP service wants to run on this Mac. Review the input before allowing.');
- const isMcp=name.startsWith('mcp__');
- /* 「始终允许」仅执行类工具提供:bash 按相同命令、MCP 按工具名,项目内生效 */
- const showAlways=!!request?.key;
- const optionClass="h-auto w-full flex-col items-start gap-0.5 whitespace-normal py-2.5 text-left";
- return <Dialog onOpenChange={open=>{if(!open&&request)onRespond(request.id,'deny')}} open={!!request}>
-  <DialogContent className="sm:max-w-lg">
-   <DialogHeader>
-    <DialogTitle className="flex items-center gap-2"><ShieldAlertIcon aria-hidden className="size-5 text-amber-500"/>{title}</DialogTitle>
-    <DialogDescription>{request?.context?`${request.context} · `:''}{description}</DialogDescription>
-   </DialogHeader>
-   <pre className="max-h-[40vh] overflow-auto rounded-lg border border-border bg-muted p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap break-all">{request?.detail}</pre>
-   <div className="grid gap-2" role="group">
-    <Button className={optionClass} onClick={()=>request&&onRespond(request.id,'allow')} type="button">
-     <span>{zh?'允许':'Allow'}</span>
-     <span className="text-xs font-normal opacity-75">{zh?'仅允许这一次':'Only this once'}</span>
-    </Button>
-    {showAlways&&<Button className={optionClass} onClick={()=>request&&onRespond(request.id,'always')} type="button" variant="outline">
-     <span>{isMcp?(zh?'始终允许此工具':'Always allow this tool'):(zh?'始终允许此命令':'Always allow this command')}</span>
-     <span className="text-xs font-normal text-muted-foreground">{zh?'本项目内，后续相同命令或工具不再询问':'Within this project, the same command or tool will not be asked again'}</span>
-    </Button>}
-    <Button className={optionClass} onClick={()=>request&&onFullAccess(request.id)} type="button" variant="outline">
-     <span>{zh?'完全访问':'Full access'}</span>
-     <span className="text-xs font-normal text-muted-foreground">{zh?'切换权限模式，本次允许且之后不再确认':'Switch the permission mode: allow this and stop asking'}</span>
-    </Button>
-    <Button className={optionClass} onClick={()=>request&&onRespond(request.id,'deny')} type="button" variant="outline">
-     <span>{zh?'拒绝':'Deny'}</span>
-     <span className="text-xs font-normal text-muted-foreground">{zh?'这次先拒绝':'Reject this time'}</span>
-    </Button>
-   </div>
-  </DialogContent>
- </Dialog>;
-}
+
 function App(){const [prefs,setPrefs]=useState<Preferences>({appearance:'system',language:'system'});const [projects,setProjects]=useState<Project[]>([]);const [selected,setSelected]=useState<string|null>(null);const [files,setFiles]=useState<ProjectFile[]>([]);const [folder,setFolder]=useState('');const [fileQuery,setFileQuery]=useState('');const [editingProject,setEditingProject]=useState<Project|null>(null);const [dockTabs,setDockTabs]=useState<DockTab[]>([{id:'guide',kind:'guide',title:'Start'}]);const [activeDockTab,setActiveDockTab]=useState('guide');const [fileError,setFileError]=useState('');const [fileVersion,setFileVersion]=useState(0);const [loading,setLoading]=useState(false);const [chats,setChats]=useState<ChatSummary[]>([]);const [activeChat,setActiveChat]=useState<string|null>(null);const [documentsOpen,setDocumentsOpen]=useState(false);const [searchOpen,setSearchOpen]=useState(false);const [chatSearch,setChatSearch]=useState('');const [sidebarCollapsed,setSidebarCollapsed]=useState(false);const [editingChat,setEditingChat]=useState<ChatSummary|null>(null);const [chatTitle,setChatTitle]=useState('');const [chatEditError,setChatEditError]=useState('');const [draft,setDraft]=useState('');const [attachments,setAttachments]=useState<(string|PickedAttachment)[]>([]);const [messages,setMessages]=useState<ChatMessage[]>([]);const toolPaths=useRef(new Map<string,string>());const [changedPath,setChangedPath]=useState<string|null>(null);const [chatBusy,setChatBusy]=useState(false);const [chatError,setChatError]=useState('');const [skills,setSkills]=useState<LocalSkill[]>([]);const [skillId,setSkillId]=useState('');const [skillsOpen,setSkillsOpen]=useState(false);const [mcpServers,setMcpServers]=useState<import('../shared/types').McpServer[]>([]);const [mcpId,setMcpId]=useState('');const [settings,setSettings]=useState(false);const [webHistoryOpen,setWebHistoryOpen]=useState(false);const [schedulesOpen,setSchedulesOpen]=useState(false);const [gateway,setGateway]=useState<GatewayConfig|null>(null);const [account,setAccount]=useState<AccountStatus|null>(null);const [modelSelection,setModelSelection]=useState('');const [error,setError]=useState('');const [systemDark,setSystemDark]=useState(matchMedia('(prefers-color-scheme: dark)').matches);const [systemLanguage,setSystemLanguage]=useState(navigator.language);const lang=prefs.language==='system'?(systemLanguage.toLowerCase().startsWith('zh')?'zh-CN':'en'):prefs.language;const t=words[lang];
 const [slashIndex,setSlashIndex]=useState(0);const [slashDismissed,setSlashDismissed]=useState(false);
-/* 输入框 / 命令:唤出技能与 MCP 选择面板(替代原「添加内容与能力」弹层);输入 /关键词 过滤,回车/点击选中 */
-const slashMatch=/^\/(\S*)$/.exec(draft);const slashAll=slashMatch?[...skills.filter(skill=>skill.enabled).map(skill=>({kind:'skill' as const,id:skill.id,name:skill.name,description:skill.description,tag:skill.source==='agents'?'~/.agents/skills':lang==='zh-CN'?'本地导入':'Imported'})),...mcpServers.filter(server=>server.enabled).map(server=>({kind:'mcp' as const,id:server.id,name:server.name,description:server.description??'',tag:'MCP'}))].filter(item=>`${item.name} ${item.description}`.toLocaleLowerCase().includes(slashMatch[1].toLocaleLowerCase())):[];const slashMatches=slashAll;
+const [composerSelection,setComposerSelection]=useState({start:0,end:0});
+const [skillMention,setSkillMention]=useState<{start:number;end:number;name:string}|null>(null);
+const composerHighlight=useRef<HTMLDivElement>(null);
+const pendingComposerCaret=useRef<number|null>(null);
+const draftPrompt=(skillMention?draft.slice(0,skillMention.start)+draft.slice(skillMention.end):draft).trim();
+/* 技能以原生文本保留在输入位置;镜像层只负责颜色,输入、选择和粘贴仍由 textarea 处理。 */
+const inSkillMention=skillMention&&composerSelection.start>skillMention.start&&composerSelection.start<=skillMention.end;
+const slashMatch=!inSkillMention&&composerSelection.start===composerSelection.end?/\/([^\s/]*)$/.exec(draft.slice(0,composerSelection.start)):null;const slashAll=slashMatch?[...skills.filter(skill=>skill.enabled).map(skill=>({kind:'skill' as const,id:skill.id,name:skill.name,description:skill.description,tag:skill.source==='agents'?'~/.agents/skills':lang==='zh-CN'?'本地导入':'Imported'})),...mcpServers.filter(server=>server.enabled).map(server=>({kind:'mcp' as const,id:server.id,name:server.name,description:server.description??'',tag:'MCP'}))].filter(item=>`${item.name} ${item.description}`.toLocaleLowerCase().includes(slashMatch[1].toLocaleLowerCase())):[];const slashMatches=slashAll;
 const slashOpen=!!slashMatch&&!slashDismissed&&slashMatches.length>0;const slashActive=Math.min(slashIndex,slashMatches.length-1);
-const applySlash=(item:(typeof slashMatches)[number])=>{if(item.kind==='skill')setSkillId(item.id);else setMcpId(item.id);setDraft('');setSlashDismissed(false);setSlashIndex(0)};
+function updateComposerDraft(value:string){
+ if(skillMention){
+  let start=0;while(start<draft.length&&start<value.length&&draft[start]===value[start])start++;
+  let oldEnd=draft.length,newEnd=value.length;while(oldEnd>start&&newEnd>start&&draft[oldEnd-1]===value[newEnd-1]){oldEnd--;newEnd--}
+  if(oldEnd<=skillMention.start){const shift=newEnd-oldEnd;setSkillMention({...skillMention,start:skillMention.start+shift,end:skillMention.end+shift})}
+  else if(start<skillMention.end){setSkillMention(null);setSkillId('')}
+ }
+ setDraft(value);setSlashDismissed(false);setSlashIndex(0);
+}
+function focusComposerAt(caret:number){
+ pendingComposerCaret.current=caret;
+ setComposerSelection({start:caret,end:caret});
+}
+useLayoutEffect(()=>{const input=composerInput.current,caret=pendingComposerCaret.current;if(input&&caret!==null){pendingComposerCaret.current=null;input.focus();input.setSelectionRange(caret,caret)}});
+const applySlash=(item:(typeof slashMatches)[number])=>{
+ if(!slashMatch)return;
+ let start=slashMatch.index,end=composerSelection.start,text=draft;
+ if(item.kind==='skill'){
+  if(skillMention){text=text.slice(0,skillMention.start)+text.slice(skillMention.end);if(skillMention.end<=start){start-=skillMention.end-skillMention.start;end-=skillMention.end-skillMention.start}}
+  // 一个 em 空格为技能图标预留位置,与镜像层保持相同的光标和换行宽度。
+  const label=`\u2003${item.name}`;
+  setDraft(text.slice(0,start)+label+' '+text.slice(end));setSkillId(item.id);setSkillMention({start,end:start+label.length,name:item.name});focusComposerAt(start+label.length+1);
+ }else{
+  updateComposerDraft(text.slice(0,start)+text.slice(end));setMcpId(item.id);focusComposerAt(start);
+ }
+ setSlashDismissed(true);setSlashIndex(0);
+};
+useEffect(()=>{if(skillMention&&!skillId)setSkillMention(null)},[skillId,skillMention]);
+useEffect(()=>{const input=composerInput.current,highlight=composerHighlight.current;if(input&&highlight){highlight.scrollTop=input.scrollTop;highlight.scrollLeft=input.scrollLeft}},[draft,skillMention]);
 /* 列表完整展示,超出面板高度时滚动;渐隐遮罩按真实溢出判断,键盘导航时高亮行滚动进可视区 */
 const slashListRef=useRef<HTMLDivElement|null>(null);const [slashOverflow,setSlashOverflow]=useState(false);
 useEffect(()=>{const element=slashListRef.current;setSlashOverflow(!!element&&element.scrollHeight>element.clientHeight)},[draft,skills,mcpServers,slashOpen]);
 useEffect(()=>{if(slashOpen)document.getElementById(`slash-option-${slashActive}`)?.scrollIntoView({block:'nearest'})},[slashActive,slashOpen]);
-/* 工具审批:主进程 approval:request 推送 → 应用内弹窗;答复回传;超时/结束时主进程发 approval:closed 收起 */
-const [approval,setApproval]=useState<ApprovalRequest|null>(null);
-useEffect(()=>{const offRequest=window.desktop.onApprovalRequest(request=>setApproval(request));const offClosed=window.desktop.onApprovalClosed(id=>setApproval(current=>!current||id==='*'||id===current.id?null:current));return()=>{offRequest();offClosed()}},[]);
-const respondApproval=(id:string,decision:ApprovalDecision)=>{setApproval(null);void window.desktop.respondApproval(id,decision)};
-/* 弹窗内选「完全访问」:切换全局权限模式(经 change 持久化并下发 worker),本次按允许答复 */
-const escalateApprovalFullAccess=(id:string)=>{setApproval(null);void change({...prefs,permission:'full'});void window.desktop.respondApproval(id,'allow')};
+/* 输入框上方统一展示权限确认和 Agent 问题,并保留并发请求队列。 */
+const {pending:pendingInteractions,dismiss:dismissInteraction,saved:interactionDrafts}=usePendingInteractions();
+const respondApproval=(id:string,decision:ApprovalDecision)=>{dismissInteraction('approval',id);void window.desktop.respondApproval(id,decision)};
+const escalateApprovalFullAccess=(id:string)=>{dismissInteraction('approval',id);void change({...prefs,permission:'full'});void window.desktop.respondApproval(id,'allow')};
+const respondQuestion=(id:string,response:QuestionResponse)=>{dismissInteraction('question',id);void window.desktop.respondQuestion(id,response)};
+const interactionDock=<PendingInteractionDock saved={interactionDrafts} pending={pendingInteractions} language={lang} onApproval={respondApproval} onFullAccess={escalateApprovalFullAccess} onQuestion={respondQuestion}/>;
 const [createOpen,setCreateOpen]=useState(false);
 const [settingsSection,setSettingsSection]=useState<SettingsSectionId>('general');
 /* 客户端更新:主界面侧栏仅在有新版/已就绪时露出入口(点击进设置-关于);下载过程不打扰 */
@@ -382,11 +380,11 @@ function editProject(project:Project){setEditingProject(project)}
 async function saveAnswer(content:string){if(chatBusy)return;try{const relative=await window.desktop.saveAnswer(content);if(relative){setChatError('');toast.success(libraryStrings[lang].savedToLibrary);window.dispatchEvent(new Event('piwork:library-changed'))}}catch{setChatError(t.saveAnswerFailed)}}
 async function sendMessage(text:string){if(!text||chatBusy||attachmentLoading)return false;
 if(attachments.some(item=>typeof item!=='string'&&item.kind==='image')&&!modelAcceptsImages&&modelValue){setChatError((lang==='zh-CN'?zhMessages:enMessages).api.modelNoImages);return false}
-const chosen=modelValue;if(!chosen){setChatError(t.configure);return false}const model=chosen==='custom'?{source:'custom' as const,id:gateway?.modelId??''}:{source:'account' as const,id:chosen.slice(8)};setDraft('');setChatError('');toolPaths.current.clear();
+const chosen=modelValue;if(!chosen){setChatError(t.configure);return false}const model=chosen==='custom'?{source:'custom' as const,id:gateway?.modelId??''}:{source:'account' as const,id:chosen.slice(8)};const pendingDraft=draft,pendingMention=skillMention;setDraft('');setSkillMention(null);setSkillId('');setChatError('');toolPaths.current.clear();
 const pendingAttachments=attachments.map(item=>({name:typeof item==='string'?item.split('/').at(-1)!:item.name,ref:attachmentRefOf(item)}));
 const activeSkillName=skillId?skills.find(item=>item.id===skillId)?.name:undefined;
-setMessages(items=>[...items,{role:'user',text,...(pendingAttachments.length?{attachments:pendingAttachments}:{}),...(activeSkillName?{skillName:activeSkillName}:{})},{role:'assistant',text:'',startedAt:Date.now()}]);setChatBusy(true);try{setActiveChat(await window.desktop.sendChat(text,selected,skillId||null,mcpId||null,attachments.map(item=>typeof item==='object'?{token:item.token}:item),model));setAttachments([]);return true}catch(error){setDraft(text);setMessages(items=>items.slice(0,-2));setChatBusy(false);const message=String(error);setChatError(message.includes('Sync task running')?t.syncTaskRunning:message.includes('Sync conflict')?t.syncSendConflict:message.includes('Sync unavailable')?t.syncSendUnavailable:message.includes('Sync busy')?t.syncSendBusy:message.includes('Sync only supports new chats')?t.syncOldChat:message.includes('Session busy')?t.sessionBusy:attachments.length?t.attachmentFailed:t.chatFailed);return false}}
-async function sendChat(e:React.FormEvent){e.preventDefault();await sendMessage(draft.trim())}
+setMessages(items=>[...items,{role:'user',text,...(pendingAttachments.length?{attachments:pendingAttachments}:{}),...(activeSkillName?{skillName:activeSkillName}:{})},{role:'assistant',text:'',startedAt:Date.now()}]);setChatBusy(true);try{setActiveChat(await window.desktop.sendChat(text,selected,skillId||null,mcpId||null,attachments.map(item=>typeof item==='object'?{token:item.token}:item),model));setAttachments([]);return true}catch(error){setDraft(pendingMention?pendingDraft:text);setSkillMention(pendingMention);setSkillId(skillId);setMessages(items=>items.slice(0,-2));setChatBusy(false);const message=String(error);setChatError(message.includes('Sync task running')?t.syncTaskRunning:message.includes('Sync conflict')?t.syncSendConflict:message.includes('Sync unavailable')?t.syncSendUnavailable:message.includes('Sync busy')?t.syncSendBusy:message.includes('Sync only supports new chats')?t.syncOldChat:message.includes('Session busy')?t.sessionBusy:attachments.length?t.attachmentFailed:t.chatFailed);return false}}
+async function sendChat(e:React.FormEvent){e.preventDefault();await sendMessage(draftPrompt)}
 // 定时任务页「AI 安排任务」入口:开新对话并自动发送(web 端为 /?query= 跳转,由聊天页自动发出首条消息)
 async function askAI(text:string){await newChat();const sent=await sendMessage(text);if(!sent)setDraft(current=>current||text)}
 async function newChat(){if(attachmentLoading)return;setSchedulesOpen(false);setSkillsOpen(false);setDocumentsOpen(false);if(chatBusy){await window.desktop.stopChat();return}await window.desktop.clearChat();setMessages([]);setActiveChat(null);setChatError('');setChatBusy(false);setSelected(null);setAttachments([])}
@@ -544,7 +542,7 @@ return <>{settings?<SettingsPage
         completed:t.toolCompleted,
         failed:t.toolFailed,
         reasons:{denied:t.toolDenied,changed:t.toolChanged,invalid:t.toolInvalid,error:t.toolError,interrupted:t.toolInterrupted},
-        names:{skill_bash:t.toolBash,bash:webMessages.toolStatus.bash,skill_read:t.toolSkillRead,
+        names:{ask_user:lang==='zh-CN'?'询问用户':'Ask user',skill_bash:t.toolBash,bash:webMessages.toolStatus.bash,skill_read:t.toolSkillRead,
           project_list:t.toolList,project_read:t.toolRead,project_write:t.toolWrite,project_create_office:t.toolOffice},
         params:t.toolParams,
         output:t.toolOutput,
@@ -584,24 +582,35 @@ return <>{settings?<SettingsPage
   ) : (
     <section className="empty"><><div className="mark">✳</div><h1>{t.empty}</h1><p>{t.description}</p><button disabled={chatBusy} onClick={add}>{t.add}</button></></section>
   )}
-{(!current||messages.length>0)&&<div className="composer-shell">
+{(!current||messages.length>0||pendingInteractions.length>0)&&<div className="composer-shell" data-awaiting={pendingInteractions.length>0||undefined}>
   {messages.length>0&&(
     <p className="conversation-disclaimer">{webChat.piworkCanMakeMistakesCheckImportantInformation}</p>
   )}
+  {interactionDock}
   <form className="openai-composer" onSubmit={sendChat}>
-    {slashOpen&&<div className="slash-menu" data-more={slashOverflow||undefined}><p className="slash-menu-title" id="slash-menu-title">{lang==='zh-CN'?'技能与 MCP':'Skills & MCP'}</p><div className="slash-menu-list" ref={slashListRef} role="listbox" aria-labelledby="slash-menu-title">{slashMatches.map((item,index)=><button key={`${item.kind}:${item.id}`} id={`slash-option-${index}`} type="button" role="option" aria-selected={index===slashActive} className={'slash-option'+(index===slashActive?' active':'')} onMouseEnter={()=>setSlashIndex(index)} onClick={()=>applySlash(item)}><span className="slash-option-icon">{item.kind==='mcp'?<PlugIcon size={16}/>:<BoxIcon size={16}/>}</span><span className="slash-option-name">{item.name}</span><span className="slash-option-desc">{item.description}</span><span className="slash-option-tag">{item.tag}</span></button>)}</div></div>}
+    {slashOpen&&<div className="slash-menu" data-more={slashOverflow||undefined}><p className="slash-menu-title" id="slash-menu-title">{lang==='zh-CN'?'技能与 MCP':'Skills & MCP'}</p><div className="slash-menu-list" ref={slashListRef} onMouseDown={e=>e.preventDefault()} role="listbox" aria-labelledby="slash-menu-title">{slashMatches.map((item,index)=><button key={`${item.kind}:${item.id}`} id={`slash-option-${index}`} type="button" role="option" aria-selected={index===slashActive} className={'slash-option'+(index===slashActive?' active':'')} onMouseEnter={()=>setSlashIndex(index)} onClick={()=>applySlash(item)}><span className="slash-option-icon">{item.kind==='mcp'?<PlugIcon size={16}/>:<BoxIcon size={16}/>}</span><span className="slash-option-name">{item.name}</span><span className="slash-option-desc">{item.description}</span><span className="slash-option-tag">{item.tag}</span></button>)}</div></div>}
     <div className="composer" data-slot="input-group">
       {attachments.length>0&&<div className="attachment-chips">{attachments.map(item=><AttachmentChip key={typeof item==='string'?item:item.token} name={typeof item==='string'?item:item.name} attachmentRef={attachmentRefOf(item)} onOpen={ref=>void openAttachment(ref)} onRemove={()=>removeAttachment(item)} removeLabel={t.removeAttachment} previewLabel={t.preview}/>)}</div>}
-      {(skillId||mcpId)&&<div className="capability-chips">{skillId&&<span>{t.skills}: {skills.find(item=>item.id===skillId)?.name}<button type="button" onClick={()=>setSkillId('')} aria-label={lang==='zh-CN'?`取消选择技能 ${skills.find(item=>item.id===skillId)?.name??''}`:`Detach skill ${skills.find(item=>item.id===skillId)?.name??''}`}>×</button></span>}{mcpId&&<span>MCP: {mcpServers.find(item=>item.id===mcpId)?.name}<button type="button" onClick={()=>setMcpId('')} aria-label={lang==='zh-CN'?`取消选择 ${mcpServers.find(item=>item.id===mcpId)?.name??''}`:`Detach ${mcpServers.find(item=>item.id===mcpId)?.name??''}`}>×</button></span>}</div>}
+      {mcpId&&<div className="capability-chips"><span>MCP: {mcpServers.find(item=>item.id===mcpId)?.name}<button type="button" onClick={()=>setMcpId('')} aria-label={lang==='zh-CN'?`取消选择 ${mcpServers.find(item=>item.id===mcpId)?.name??''}`:`Detach ${mcpServers.find(item=>item.id===mcpId)?.name??''}`}>×</button></span></div>}
+      <div className="composer-input" data-has-skill={!!skillMention||undefined}>
+        <div className="composer-highlight" ref={composerHighlight} aria-hidden="true">{skillMention&&<>{draft.slice(0,skillMention.start)}<span className="composer-skill-mention"><span className="composer-skill-icon">{'\u2003'}<BoxIcon size={14}/></span>{draft.slice(skillMention.start+1,skillMention.end)}</span>{draft.slice(skillMention.end)}{'\n'}</>}</div>
       <textarea
         ref={composerInput}
         placeholder={current && !messages.length ? webChat.newChatInProject.replace('{name}', current.name) : webChat.askAnything}
         aria-label={t.placeholder}
         value={draft}
         aria-activedescendant={slashOpen?`slash-option-${slashActive}`:undefined}
-        onChange={e=>{setDraft(e.target.value);setSlashDismissed(false);setSlashIndex(0)}}
+        onChange={e=>{updateComposerDraft(e.target.value);setComposerSelection({start:e.currentTarget.selectionStart,end:e.currentTarget.selectionEnd})}}
+        onScroll={e=>{const highlight=composerHighlight.current;if(highlight){highlight.scrollTop=e.currentTarget.scrollTop;highlight.scrollLeft=e.currentTarget.scrollLeft}}}
+        onSelect={e=>{const {selectionStart:start,selectionEnd:end}=e.currentTarget;if(start!==composerSelection.start||end!==composerSelection.end){setComposerSelection({start,end});setSlashDismissed(false);setSlashIndex(0)}}}
         onPaste={pasteFiles}
         onKeyDown={e=>{
+          if(skillMention&&!e.nativeEvent.isComposing&&!e.altKey&&!e.ctrlKey&&!e.metaKey&&(e.key==='Backspace'||e.key==='Delete')){
+            const {selectionStart:start,selectionEnd:end}=e.currentTarget;
+            if(start===end&&((e.key==='Backspace'&&start>skillMention.start&&start<=skillMention.end)||(e.key==='Delete'&&start>=skillMention.start&&start<skillMention.end))){
+              e.preventDefault();setDraft(draft.slice(0,skillMention.start)+draft.slice(skillMention.end));setSkillMention(null);setSkillId('');setSlashDismissed(true);focusComposerAt(skillMention.start);return;
+            }
+          }
           if(slashOpen&&(e.key==='ArrowDown'||e.key==='ArrowUp')){e.preventDefault();setSlashIndex(e.key==='ArrowDown'?(slashActive+1)%slashMatches.length:(slashActive-1+slashMatches.length)%slashMatches.length);return}
           if(slashOpen&&e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault();applySlash(slashMatches[slashActive]);return}
           if(slashOpen&&e.key==='Escape'){e.preventDefault();setSlashDismissed(true);return}
@@ -611,6 +620,7 @@ return <>{settings?<SettingsPage
           }
         }}
       />
+      </div>
       <div className="composer-actions">
         <AttachmentsMenu
           copy={webChat}
@@ -642,7 +652,7 @@ return <>{settings?<SettingsPage
         />
         {chatBusy
           ? <Button className="composer-submit" size="icon-lg" type="button" aria-label={t.stop} title={webChat.stopGenerating} onClick={()=>window.desktop.stopChat()}><StopIcon aria-hidden="true" className="size-4"/></Button>
-          : <Button className="composer-submit" size="icon-lg" type="submit" aria-label={t.send} title={t.send} disabled={!draft.trim()||attachmentLoading}><ArrowUpIcon aria-hidden="true" className="size-5"/></Button>}
+          : <Button className="composer-submit" size="icon-lg" type="submit" aria-label={t.send} title={t.send} disabled={!draftPrompt||attachmentLoading}><ArrowUpIcon aria-hidden="true" className="size-5"/></Button>}
       </div>
     </div>
   </form>
@@ -688,5 +698,5 @@ return <>{settings?<SettingsPage
   onReveal={file=>{if(file.cache)window.desktop.revealAttachment(file.cache).catch(()=>toast.error(t.openFailed));else if(selected)window.desktop.revealFile(selected,file.path).catch(()=>toast.error(t.openFailed))}}
   onTitleChange={setTabTitle}
   onOpenUrlExternal={url=>{void window.desktop.openExternalUrl(url).catch(()=>toast.error(t.openFailed))}}
-/>}{editingChat&&<div className="overlay"><section className="dialog" role="dialog" aria-modal="true" aria-label={t.renameChat}><div className="dialog-header"><h2>{t.renameChat}</h2><button onClick={()=>setEditingChat(null)} aria-label={t.close}>×</button></div><form className="project-edit" onSubmit={saveChatTitle}><label>{t.renameChat}<input value={chatTitle} maxLength={80} required autoFocus onChange={e=>setChatTitle(e.target.value)}/></label><button type="submit">{t.save}</button> <button type="button" onClick={()=>setEditingChat(null)}>{t.cancel}</button>{chatEditError&&<p className="error" role="alert">{chatEditError}</p>}</form></section></div>}<CreateProjectDialog copy={projectDialogCopy} open={createOpen} onClose={()=>setCreateOpen(false)} onCreated={async project=>{setCreateOpen(false);setProjects(await window.desktop.listProjects());await selectProject(project.id)}}/>{editingProject&&<EditProjectDialog copy={projectDialogCopy} project={editingProject} open={!!editingProject} onClose={()=>setEditingProject(null)} onSaved={()=>{setEditingProject(null);void refreshProjects()}} onRemoved={async project=>{setEditingProject(null);setProjects(await window.desktop.listProjects());if(selected===project.id&&!activeChat){setSelected(null);setAttachments([])}}}/>}{webHistoryOpen&&<WebHistory language={lang} onClose={()=>setWebHistoryOpen(false)} onImported={id=>{setWebHistoryOpen(false);void window.desktop.listChats().then(setChats);void openChat(id)}}/>}</div>}{lightbox&&<Lightbox index={lightbox.index} items={lightbox.items} language={lang} onClose={()=>setLightbox(null)}/>}<ApprovalDialog language={lang} request={approval} onRespond={respondApproval} onFullAccess={escalateApprovalFullAccess}/><Toaster position="top-center" theme="system" toastOptions={{className:'!bg-card !text-foreground !border-[var(--hairline-strong)] !shadow-none'}}/></>;}
+/>}{editingChat&&<div className="overlay"><section className="dialog" role="dialog" aria-modal="true" aria-label={t.renameChat}><div className="dialog-header"><h2>{t.renameChat}</h2><button onClick={()=>setEditingChat(null)} aria-label={t.close}>×</button></div><form className="project-edit" onSubmit={saveChatTitle}><label>{t.renameChat}<input value={chatTitle} maxLength={80} required autoFocus onChange={e=>setChatTitle(e.target.value)}/></label><button type="submit">{t.save}</button> <button type="button" onClick={()=>setEditingChat(null)}>{t.cancel}</button>{chatEditError&&<p className="error" role="alert">{chatEditError}</p>}</form></section></div>}<CreateProjectDialog copy={projectDialogCopy} open={createOpen} onClose={()=>setCreateOpen(false)} onCreated={async project=>{setCreateOpen(false);setProjects(await window.desktop.listProjects());await selectProject(project.id)}}/>{editingProject&&<EditProjectDialog copy={projectDialogCopy} project={editingProject} open={!!editingProject} onClose={()=>setEditingProject(null)} onSaved={()=>{setEditingProject(null);void refreshProjects()}} onRemoved={async project=>{setEditingProject(null);setProjects(await window.desktop.listProjects());if(selected===project.id&&!activeChat){setSelected(null);setAttachments([])}}}/>}{webHistoryOpen&&<WebHistory language={lang} onClose={()=>setWebHistoryOpen(false)} onImported={id=>{setWebHistoryOpen(false);void window.desktop.listChats().then(setChats);void openChat(id)}}/>}</div>}{lightbox&&<Lightbox index={lightbox.index} items={lightbox.items} language={lang} onClose={()=>setLightbox(null)}/>}{(settings||schedulesOpen||skillsOpen||documentsOpen)&&pendingInteractions.length>0&&<div className="interaction-detached">{interactionDock}</div>}<Toaster position="top-center" theme="system" toastOptions={{className:'!bg-card !text-foreground !border-[var(--hairline-strong)] !shadow-none'}}/></>;}
 createRoot(document.getElementById('root')!).render(<WebIntlProvider>{location.hash==='#smoke-brand'?<BrandSmoke/>:<App/>}</WebIntlProvider>);

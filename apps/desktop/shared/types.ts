@@ -51,11 +51,15 @@ export type AppUpdateProgress={received:number;total:number};
 /** 更新状态机:idle 未检查 / upToDate 已是最新 / available 有新版 / downloading 下载中 / downloaded 已就绪 */
 export type AppUpdateState={phase:'idle'|'upToDate'|'available'|'downloading'|'downloaded';info?:AppUpdateInfo;progress?:AppUpdateProgress};
 export type LibraryEntry={path:string;parentPath:string;name:string;kind:'file'|'folder';source:'upload'|'ai'|'manual';contentType:string|null;size:number;updatedAt:number};
-/** 工具审批请求(主进程→渲染层应用内弹窗);context 为附加来源(如定时任务名);
+/** 工具审批请求(主进程→输入框上方交互卡片);context 为附加来源(如定时任务名);
     key 为「始终允许」的稳定标识(skill_bash 为命令全文,mcp__* 为工具名),仅执行类工具携带 */
 export type ApprovalRequest={id:string;name:string;detail:string;context?:string;key?:string};
 /** 审批答复:allow 允许一次;always 允许并记入项目级始终允许名单;deny 拒绝 */
 export type ApprovalDecision='allow'|'always'|'deny';
+export type AgentQuestion={id:string;question:string;header?:string;options?:{label:string;description?:string}[]};
+export type QuestionRequest={type:'question';id:string;questions:AgentQuestion[]};
+/** null 表示跳过;cancelled 表示关闭整组问题,不应被模型视为确认。 */
+export type QuestionResponse={answers:Record<string,string|null>;cancelled?:boolean};
 export type DesktopApi = {
   listWebHistory(before?:string):Promise<{chats:WebHistoryItem[];hasMore:boolean}>;
   readWebHistory(id:string):Promise<{messages:{id:string;role:'user'|'assistant';text:string}[];omitted:boolean}>;
@@ -115,6 +119,9 @@ export type DesktopApi = {
   onApprovalRequest(listener:(request:ApprovalRequest)=>void):()=>void;
   onApprovalClosed(listener:(id:string)=>void):()=>void;
   respondApproval(id:string,decision:ApprovalDecision):Promise<void>;
+  onQuestionRequest(listener:(request:QuestionRequest)=>void):()=>void;
+  onQuestionClosed(listener:(id:string)=>void):()=>void;
+  respondQuestion(id:string,response:QuestionResponse):Promise<void>;
   onBrowserOpen(listener:(url:string)=>void):()=>void;
   openExternalUrl(url:string):Promise<void>;
   getGateway():Promise<GatewayConfig | null>;

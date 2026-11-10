@@ -9,6 +9,7 @@ import type {ProjectRoot} from './project-files.ts';
 import {createSkillTools} from './skill-tools.ts';
 import {createScheduleTools,schedulingPrompt,type ScheduleCreateInput} from './schedule-tools.ts';
 import type {ChatEvent} from '../shared/types.ts';
+import {createQuestionTools,type RequestQuestions} from './question-tools.ts';
 import {capToolText,sanitizeArgs,toolFailureReason,toolResultText} from './tool-history.ts';
 import {PiToRuntimeMapper} from './pi-to-runtime.ts';
 import type {RuntimeEvent} from '../src/web/lib/runtime/protocol/events.ts';
@@ -23,7 +24,7 @@ export class ChatSession {
  private readonly approve:(id:string,name:string,input:unknown)=>Promise<boolean>;
  private mapper:PiToRuntimeMapper|null=null;
  constructor(onEvent:(event:ChatEvent)=>void,onRuntimeEvent:((event:RuntimeEvent)=>void)|null=null,approve:(id:string,name:string,input:unknown)=>Promise<boolean>=async()=>false){this.onEvent=onEvent;this.onRuntimeEvent=onRuntimeEvent;this.approve=approve}
- async open(input:GatewayInput,cwd:string,agentDir:string,sessionFile?:string,skillPath?:string,mcp?:McpConfig,projectRoots?:ProjectRoot[],schedule?:{requestCreate:(input:ScheduleCreateInput)=>Promise<void>}){
+ async open(input:GatewayInput,cwd:string,agentDir:string,sessionFile?:string,skillPath?:string,mcp?:McpConfig,projectRoots?:ProjectRoot[],schedule?:{requestCreate:(input:ScheduleCreateInput)=>Promise<void>},requestQuestions?:RequestQuestions){
   const config=validateGateway(input);
   const runtime=await ModelRuntime.create({modelsPath:null,authPath:`${agentDir}/auth.json`,refreshOnCreate:false});
   runtime.registerProvider('piwork-custom',{name:'Custom gateway',baseUrl:config.baseUrl,api:config.api??'openai-completions',apiKey:config.apiKey||'local',models:[{id:config.modelId,name:config.modelId,reasoning:false,input:config.supportsImages?['text','image']:['text'],cost:{input:0,output:0,cacheRead:0,cacheWrite:0},contextWindow:128000,maxTokens:8192}]});
@@ -41,6 +42,7 @@ export class ChatSession {
    projectRoots
     ? `A local project is selected. Call project_list with an empty path first: the top-level directories are the project source folders, and the first one is the main folder. Project paths start with a source folder name (for example "${projectRoots[0].label}/notes.md"); a bare path resolves inside the main folder. Every source folder is readable, but project_write and project_create_office only work inside the main folder. When the user requests an HTML file, use project_write to deliver it and summarize the result in the reply.`
     : 'No local project is selected. For local project materials, use the files attached to the conversation. If the task needs local project files that were not attached, ask the user to start a new chat with a project selected or attach the files. Do not assume access to a local directory. When delivering HTML without a project, put it in a fenced html block so PiWork can offer it as a file.',
+   ...(requestQuestions?['When you need a user decision or missing information to proceed, use ask_user to present concise questions and choices. Treat skipped or cancelled answers as unanswered, never as approval.']:[]),
    // 前台对话注册 create_scheduled_task 时附带调度规则(web schedulingPrompt 的桌面版);
    // 定时任务的 worker 运行不带该工具,避免 Agent 递归建任务。
    ...(schedule?[schedulingPrompt+new Date().toString()]:[]),
@@ -55,7 +57,7 @@ export class ChatSession {
   await loader.reload();
   // noTools:'builtin' 关闭默认编码工具(read/bash/edit/write)但保留扩展与自定义工具;
   // 原先的 tools 白名单无法容纳插件扩展注册的任意工具名,故改用此模式
-  const {session}=await createAgentSession({cwd,agentDir,model,modelRuntime:runtime,settingsManager:settings,resourceLoader:loader,sessionManager:sessionFile?SessionManager.open(sessionFile,undefined,cwd):SessionManager.inMemory(),noTools:'builtin',customTools:[...(projectRoots?createProjectTools(projectRoots,this.approve,config.supportsImages===true):[]),...(skillPath?[...createSkillTools(skillPath),defineTool({...createBashToolDefinition(projectRoots?.[0]?.root??path.dirname(skillPath),{exposeSessionEnvironment:false,spawnHook:context=>({...context,cwd:projectRoots?.[0]?.root??path.dirname(skillPath)})}),name:'skill_bash'})]:[]),...(schedule?createScheduleTools(schedule.requestCreate):[])],thinkingLevel:'off'});
+  const {session}=await createAgentSession({cwd,agentDir,model,modelRuntime:runtime,settingsManager:settings,resourceLoader:loader,sessionManager:sessionFile?SessionManager.open(sessionFile,undefined,cwd):SessionManager.inMemory(),noTools:'builtin',customTools:[...(requestQuestions?createQuestionTools(requestQuestions):[]),...(projectRoots?createProjectTools(projectRoots,this.approve,config.supportsImages===true):[]),...(skillPath?[...createSkillTools(skillPath),defineTool({...createBashToolDefinition(projectRoots?.[0]?.root??path.dirname(skillPath),{exposeSessionEnvironment:false,spawnHook:context=>({...context,cwd:projectRoots?.[0]?.root??path.dirname(skillPath)})}),name:'skill_bash'})]:[]),...(schedule?createScheduleTools(schedule.requestCreate):[])],thinkingLevel:'off'});
   this.session=session;
   if(mcp)await session.bindExtensions({});
   this.unsubscribe=session.subscribe(event=>{
