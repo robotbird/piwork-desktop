@@ -5,7 +5,7 @@ export const secretPattern=/^[A-Za-z0-9_-]{43}$/;
 export type PendingLogin={baseUrl:string;state:string;verifier:string;expiresAt:number};
 export function accountAddress(value:string):string {
  const url=new URL(value.trim());
- if(url.username||url.password||url.search||url.hash||url.pathname!=='/'||!(url.protocol==='https:'||url.protocol==='http:'&&['localhost','127.0.0.1','[::1]'].includes(url.hostname)))throw new Error('Invalid account server');
+ if(url.username||url.password||url.search||url.hash||url.pathname!=='/'||!['https:','http:'].includes(url.protocol))throw new Error('Invalid account server');
  return url.origin;
 }
 export function beginAccountLogin(input:string){
