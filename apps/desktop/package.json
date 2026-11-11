@@ -6,6 +6,7 @@
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
+    "dev:mac": "node scripts/dev-mac.mjs",
     "build": "tsc --noEmit && vite build",
     "icons": "node scripts/generate-icons.mjs",
     "pack:mac": "pnpm licenses:collect && pnpm build && electron-builder --mac dir --arm64 --publish never",
