@@ -6,7 +6,17 @@ import type {AccountStatus} from '../shared/types';
 
 const partition='persist:piwork-account';
 const file=()=>path.join(app.getPath('userData'),'account-server.json');
-async function getAddress():Promise<string|null>{try{return address(JSON.parse(await fs.readFile(file(),'utf8')).baseUrl)}catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return null;throw error}}
+// 2026-11 登录站点迁移到 app.piwork.net;存量安装仍存有旧地址,读到时一次性迁移并清掉旧域 cookie
+const legacyServers:Record<string,string>={'http://123.56.79.62:82':'https://app.piwork.net','https://piwork.net':'https://app.piwork.net'};
+async function getAddress():Promise<string|null>{
+ let stored:string;
+ try{stored=address(JSON.parse(await fs.readFile(file(),'utf8')).baseUrl)}catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return null;throw error}
+ const migrated=legacyServers[stored];
+ if(!migrated)return stored;
+ await fs.writeFile(file()+'.tmp',JSON.stringify({baseUrl:migrated}),{mode:0o600}).then(()=>fs.rename(file()+'.tmp',file()));
+ await session.fromPartition(partition).clearStorageData({origin:stored,storages:['cookies']}).catch(()=>{});
+ return migrated;
+}
 async function request(base:string,pathname:string,options:RequestInit={}){
  const response=await session.fromPartition(partition).fetch(base+pathname,{...options,cache:'no-store',redirect:'error',signal:AbortSignal.timeout(10000)});
  if(!response.ok)throw new Error('Account request failed');

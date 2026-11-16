@@ -167,10 +167,9 @@ export async function readProjectPdf(root:string, relative:string): Promise<stri
   } finally { await handle.close(); }
 }
 
-async function readOfficeZip(root:string,relative:string,extension:'.docx'|'.xlsx'|'.pptx'):Promise<string> {
-  if(path.extname(relative).toLowerCase()!==extension)throw new Error('Unsupported Office type');
-  const target=await resolveInside(root,relative);
-  const handle=await fs.open(target,constants.O_RDONLY | constants.O_NOFOLLOW);
+/** 已校验绝对路径的 Office 读取(office-preview 的 JS 兜底共用):20MB + PK 魔数,返回 base64 */
+export async function readOfficeZipFile(absPath:string,extension:'.docx'|'.xlsx'|'.pptx'):Promise<string> {
+  const handle=await fs.open(absPath,constants.O_RDONLY | constants.O_NOFOLLOW);
   const limit=20*1024*1024;
   try {
     const stat=await handle.stat();
@@ -182,6 +181,11 @@ async function readOfficeZip(root:string,relative:string,extension:'.docx'|'.xls
     if(length<4||!bytes.subarray(0,4).equals(Buffer.from([0x50,0x4b,0x03,0x04])))throw new Error('Invalid Office file');
     return bytes.subarray(0,length).toString('base64');
   } finally {await handle.close()}
+}
+
+async function readOfficeZip(root:string,relative:string,extension:'.docx'|'.xlsx'|'.pptx'):Promise<string> {
+  if(path.extname(relative).toLowerCase()!==extension)throw new Error('Unsupported Office type');
+  return readOfficeZipFile(await resolveInside(root,relative),extension);
 }
 
 export function readProjectDocx(root:string,relative:string) {return readOfficeZip(root,relative,'.docx')}

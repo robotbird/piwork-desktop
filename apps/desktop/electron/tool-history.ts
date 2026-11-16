@@ -1,6 +1,7 @@
 import type {AssistantSegment,ChatMessage,ToolEvent} from '../shared/types.ts';
 import type {AgentSession} from '@earendil-works/pi-coding-agent';
 import {splitChatAttachment} from './chat-attachment.ts';
+import {extractToolSources} from './tool-sources.ts';
 export function toolFailureReason(message:string):NonNullable<ToolEvent['reason']>{return /not approved|cancelled/i.test(message)?'denied':/aborted/i.test(message)?'interrupted':/changed|already exists/i.test(message)?'changed':/invalid|unsupported|symbolic/i.test(message)?'invalid':'error'}
 /** pi AgentToolResult(或其 content)中的文本部分拼接;图片等非文本块跳过。 */
 export function toolResultText(result:unknown):string{
@@ -43,6 +44,30 @@ export function sanitizeArgs(args:unknown):Record<string,unknown>|undefined{
     back-fill status/result into the matching ToolEvent by toolCallId. */
 type SessionMessage=AgentSession['messages'][number];
 
+/* pi 把 /skill:NAME 展开成 <skill name="...">...</skill>\n\n 前缀块;兼容未展开、直接存
+   /skill:NAME 前缀的旧格式。投影与编辑定位共用:返回气泡展示文本与技能名。 */
+export function userMessageText(raw:string):{text:string;skillName?:string}{
+ let text=raw;let skillName:string|undefined;
+ const expanded=/^<skill\s[^>]*\bname="([^"]*)"/.exec(raw);
+ if(expanded){skillName=expanded[1];text=text.replace(/^<skill\s[\s\S]*?<\/skill>\n\n/,'')}
+ else{const bare=/^\/skill:([^\s]+)\s+/.exec(raw);if(bare){skillName=bare[1];text=text.slice(bare[0].length)}}
+ if(skillName)text=text.replace(/^\n+/,'');
+ return {text,skillName};
+}
+/** 编辑定位:返回分支路径上第 userIndex 条(与 projectChatHistory 投影一致,空文本条目
+    跳过不消耗 index)用户消息的条目 id 与父条目 id,供 branch()/resetLeaf() 截断重生成。 */
+export function locateUserEntry(entries:readonly {type:string;id:string;parentId:string|null;message?:{role:string;content?:unknown}}[],userIndex:number):{id:string;parentId:string|null}|undefined{
+ let count=-1;
+ for(const entry of entries){
+  if(entry.type!=='message'||entry.message?.role!=='user')continue;
+  const content=entry.message!.content;
+  const raw=typeof content==='string'?content:Array.isArray(content)?content.filter((part:{type?:string})=>part?.type==='text').map((part:{text?:string})=>part.text??'').join(''):'';
+  if(!userMessageText(raw).text)continue;
+  count++;
+  if(count===userIndex)return {id:entry.id,parentId:entry.parentId};
+ }
+ return undefined;
+}
 /** Keep tool results with the assistant turn that initiated them. */
 export function projectChatHistory(messages:readonly SessionMessage[],timings:ReadonlyMap<number,{startedAt:number;durationMs:number}>=new Map()):ChatMessage[]{
  const history:ChatMessage[]=[];
@@ -70,15 +95,23 @@ export function projectChatHistory(messages:readonly SessionMessage[],timings:Re
  }
  function flushTurn(){
   const segments:AssistantSegment[]=[];
+  const calls=new Map<string,{name:string;args?:Record<string,unknown>}>();
   for(const message of turn){
    if(message.role==='assistant'){
     for(const part of message.content){
      if(part.type==='text')appendText(segments,part.text);
-     else if(part.type==='toolCall')upsertTool(segments,{type:'tool',id:part.id,name:part.name,status:'failed',reason:'interrupted',args:sanitizeArgs(part.arguments),...((part.name.startsWith('project_')||part.name==='skill_read')&&typeof part.arguments?.path==='string'?{path:part.arguments.path as string}:{})});
+     else if(part.type==='toolCall'){calls.set(part.id,{name:part.name,args:part.arguments});upsertTool(segments,{type:'tool',id:part.id,name:part.name,status:'failed',reason:'interrupted',args:sanitizeArgs(part.arguments),...((part.name.startsWith('project_')||part.name==='skill_read')&&typeof part.arguments?.path==='string'?{path:part.arguments.path as string}:{})});}
     }
    }else if(message.role==='toolResult'){
-    const text=capToolText(toolResultText(message));
-    patchTool(segments,message.toolCallId,tool=>({...tool,status:message.isError?'failed':'completed',reason:message.isError?toolFailureReason(text):undefined,...(text?{result:text}:{})}));
+    /* 来源从未截断的原始结果抽取(先于 capToolText),与 live 流共用 tool-sources */
+    const raw=toolResultText(message);
+    const call=calls.get(message.toolCallId);
+    const sources=call&&!message.isError?extractToolSources(call.name,call.args,raw):undefined;
+    const text=capToolText(raw);
+    /* workspace 会话的 project_write/project_create_office 成功结果末行携带绝对路径
+       (live 事件同款):回放按绝对路径还原,与正文链接按同一字符串去重出单张文件卡片 */
+    const absolute=!message.isError&&(call?.name==='project_write'||call?.name==='project_create_office'||call?.name==='project_append_office')?/^\/[^\n]+\.[A-Za-z0-9]+$/u.exec((raw.split('\n').at(-1)??'').trim())?.[0]:undefined;
+    patchTool(segments,message.toolCallId,tool=>({...tool,status:message.isError?'failed':'completed',reason:message.isError?toolFailureReason(text):undefined,...(absolute&&typeof tool.path==='string'&&tool.path.split('/').at(-1)===absolute.split('/').at(-1)?{path:absolute}:{}),...(text?{result:text}:{}),...(sources?.length?{sources}:{})}));
    }
   }
   const text=segments.filter(segment=>segment.kind==='text').map(segment=>segment.text).join('\n\n');
@@ -91,13 +124,7 @@ export function projectChatHistory(messages:readonly SessionMessage[],timings:Re
    flushTurn();
    timing=timings.get(message.timestamp);
    const raw=typeof message.content==='string'?message.content:message.content.filter(part=>part.type==='text').map(part=>part.text).join('');
-   /* pi 把 /skill:NAME 展开成 <skill name="...">...</skill>\n\n 前缀块:提取技能名驱动气泡标识;
-      兼容未展开、直接存 /skill:NAME 前缀的旧格式 */
-   let text=raw;let skillName:string|undefined;
-   const expanded=/^<skill\s[^>]*\bname="([^"]*)"/.exec(raw);
-   if(expanded){skillName=expanded[1];text=text.replace(/^<skill\s[\s\S]*?<\/skill>\n\n/,'')}
-   else{const bare=/^\/skill:([^\s]+)\s+/.exec(raw);if(bare){skillName=bare[1];text=text.slice(bare[0].length)}}
-   if(skillName)text=text.replace(/^\n+/,'');
+   const {text,skillName}=userMessageText(raw);
    if(text)history.push({role:'user',...splitChatAttachment(text),...(skillName?{skillName}:{})});
   }else if(message.role==='assistant'||message.role==='toolResult'){
    turn.push(message);

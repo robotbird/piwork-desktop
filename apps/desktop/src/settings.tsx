@@ -1,19 +1,16 @@
 import {useEffect,useRef,useState} from 'react';
-import {ArrowLeftIcon,CheckIcon,ChevronDownIcon,GlobeIcon,InfoIcon,LayersIcon,PaintbrushIcon,PlugIcon,PuzzleIcon,SearchIcon,Settings2Icon,UserRoundIcon} from 'lucide-react';
+import {ArrowLeftIcon,BrainCircuitIcon,CheckIcon,ChevronDownIcon,GlobeIcon,InfoIcon,PaintbrushIcon,PlugIcon,PuzzleIcon,SearchIcon,Settings2Icon,UserRoundIcon} from 'lucide-react';
 import {cn} from '@/lib/utils';
-import {Button} from '@/components/ui/button';
-import {Input} from '@/components/ui/input';
-import {Label} from '@/components/ui/label';
-import {Switch} from '@/components/ui/switch';
 import {Account} from './account';
 import {SyncSettings} from './sync-settings';
 import {PiPackages} from './pi-packages';
 import {AppUpdatePanel} from './app-update';
 import {McpServices} from './mcp';
+import {ModelProviders} from './model-providers';
 import {PiLogo} from './brand/pi-logo';
-import type {AccountStatus,Appearance,GatewayConfig,Language,McpServer,Preferences} from '../shared/types';
+import type {AccountStatus,Appearance,Language,McpServer,Preferences} from '../shared/types';
 
-export type SettingsSectionId='general'|'account'|'gateway'|'mcp'|'plugins'|'about';
+export type SettingsSectionId='general'|'account'|'models'|'mcp'|'plugins'|'about';
 
 /** 桌面端设置页自研文案(不使用 Web 同步的 i18n 词库,仿 pi-packages.tsx 模式) */
 const words={
@@ -22,14 +19,13 @@ const words={
   groupAccount:'账户',groupApp:'应用',groupAbout:'关于',
   general:'通用',generalSubtitle:'配置应用的基础偏好。',
   accountAndSync:'账号与同步',accountSubtitle:'管理 PiWork 账号登录与对话同步。',
-  modelGateway:'模型网关',gatewaySubtitle:'配置自定义 OpenAI 兼容网关,用于对话模型调用。',
+  models:'模型管理',modelsSubtitle:'选择对话模型来源:PiWork.net 模型或自定义模型供应商。',
   mcpServices:'MCP 服务',mcpSubtitle:'管理 MCP 服务接入配置;启用的服务可在对话中绑定使用。',
   piPlugins:'插件管理',pluginsSubtitle:'浏览、安装与卸载 pi 插件。',
   about:'关于 PiWork',aboutSubtitle:'版本与应用信息。',
   appearance:'外观',appearanceDesc:'设置主题(浅色、深色、跟随系统)。',
   language:'语言',languageDesc:'设置界面显示语言。',
   system:'跟随系统',light:'浅色',dark:'深色',
-  gateway:'自定义模型网关',gatewayUrl:'网关地址',modelId:'模型 ID',apiKey:'API Key',imageSupport:'模型支持图片输入',keyHint:'已保存；留空保持不变',save:'保存',gatewaySaved:'网关配置已保存',gatewayFail:'保存失败，请检查地址和系统安全存储。',
   version:'版本',aboutDesc:'PiWork 桌面端:本地项目、对话、文档与定时任务工作区。',
  },
  en:{
@@ -37,41 +33,35 @@ const words={
   groupAccount:'Account',groupApp:'App',groupAbout:'About',
   general:'General',generalSubtitle:'Configure basic app preferences.',
   accountAndSync:'Account & sync',accountSubtitle:'Manage your PiWork account sign-in and conversation sync.',
-  modelGateway:'Model gateway',gatewaySubtitle:'Configure a custom OpenAI-compatible gateway for chat models.',
+  models:'Models',modelsSubtitle:'Choose chat models from PiWork.net or custom model providers.',
   mcpServices:'MCP services',mcpSubtitle:'Manage MCP service configurations. Enabled services can be attached in chats.',
   piPlugins:'Plugins',pluginsSubtitle:'Browse, install and uninstall pi plugins.',
   about:'About PiWork',aboutSubtitle:'Version and app information.',
   appearance:'Appearance',appearanceDesc:'Set the theme (light, dark or match your system).',
   language:'Language',languageDesc:'Set the interface display language.',
   system:'System',light:'Light',dark:'Dark',
-  gateway:'Custom model gateway',gatewayUrl:'Gateway URL',modelId:'Model ID',apiKey:'API key',imageSupport:'Model supports image input',keyHint:'Saved; leave blank to keep',save:'Save',gatewaySaved:'Gateway saved',gatewayFail:'Could not save. Check the URL and system secure storage.',
   version:'Version',aboutDesc:'PiWork desktop: a workspace for local projects, chats, documents and scheduled tasks.',
  },
 } as const;
 type NavItem={id:SettingsSectionId;label:string;subtitle:string;icon:typeof UserRoundIcon;keywords:string};
 
-export function SettingsPage({lang,prefs,onChangePrefs,onLocalPrefs,account,onAccountChanged,gateway,onSaveGateway,onMcpChanged,onOpenWebHistory,onClose,section,onSectionChange}:{lang:'zh-CN'|'en';prefs:Preferences;onChangePrefs:(value:Preferences)=>void;onLocalPrefs:(value:Preferences)=>void;account:AccountStatus|null;onAccountChanged:(status:AccountStatus|null)=>void;gateway:GatewayConfig|null;onSaveGateway:(input:{baseUrl:string;modelId:string;apiKey:string;supportsImages?:boolean})=>Promise<GatewayConfig>;onMcpChanged:(servers:McpServer[])=>void;onOpenWebHistory:()=>void;onClose:()=>void;section:SettingsSectionId;onSectionChange:(id:SettingsSectionId)=>void}){
+export function SettingsPage({lang,prefs,onChangePrefs,onLocalPrefs,account,onAccountChanged,onMcpChanged,onOpenWebHistory,onClose,section,onSectionChange}:{lang:'zh-CN'|'en';prefs:Preferences;onChangePrefs:(value:Preferences)=>void;onLocalPrefs:(value:Preferences)=>void;account:AccountStatus|null;onAccountChanged:(status:AccountStatus|null)=>void;onMcpChanged:(servers:McpServer[])=>void;onOpenWebHistory:()=>void;onClose:()=>void;section:SettingsSectionId;onSectionChange:(id:SettingsSectionId)=>void}){
  const t=words[lang];
  const [query,setQuery]=useState('');
  const searchRef=useRef<HTMLInputElement|null>(null);
  const mainRef=useRef<HTMLElement|null>(null);
- // 网关表单状态由设置页自持:打开设置时从已保存配置初始化一次,保存成功后不覆盖输入
- const [gatewayUrl,setGatewayUrl]=useState('');const [modelId,setModelId]=useState('');const [apiKey,setApiKey]=useState('');const [supportsImages,setSupportsImages]=useState(false);const [gatewayMessage,setGatewayMessage]=useState('');
- const gatewayLoaded=useRef(false);
  const [version,setVersion]=useState('');
- useEffect(()=>{if(gatewayLoaded.current||!gateway)return;gatewayLoaded.current=true;setGatewayUrl(gateway.baseUrl);setModelId(gateway.modelId);setSupportsImages(gateway.supportsImages===true)},[gateway]);
  useEffect(()=>{void window.desktop.appVersion().then(setVersion).catch(()=>{})},[]);
  // ⌘F 聚焦设置搜索(设置页挂载期间接管,不与主应用 ⌘K 冲突)
  useEffect(()=>{const key=(event:KeyboardEvent)=>{if((event.metaKey||event.ctrlKey)&&event.key.toLowerCase()==='f'){event.preventDefault();searchRef.current?.focus()}};window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key)},[]);
  // 切换分区后内容回到顶部
  useEffect(()=>{mainRef.current?.scrollTo(0,0)},[section]);
- async function saveGateway(e:React.FormEvent){e.preventDefault();try{await onSaveGateway({baseUrl:gatewayUrl,modelId,apiKey,supportsImages});setApiKey('');setGatewayMessage(t.gatewaySaved)}catch{setGatewayMessage(t.gatewayFail)}}
  const accountLabel=account?.user?.email||account?.user?.name;
  const groups:{label:string;items:NavItem[]}[]=[
   {label:t.groupAccount,items:[{id:'account',label:t.accountAndSync,subtitle:t.accountSubtitle,icon:UserRoundIcon,keywords:'login server sync 登录 同步'}]},
   {label:t.groupApp,items:[
    {id:'general',label:t.general,subtitle:t.generalSubtitle,icon:Settings2Icon,keywords:`${t.appearance} ${t.language} theme 主题 外观 语言`},
-   {id:'gateway',label:t.modelGateway,subtitle:t.gatewaySubtitle,icon:LayersIcon,keywords:'model api gateway 模型 网关'},
+   {id:'models',label:t.models,subtitle:t.modelsSubtitle,icon:BrainCircuitIcon,keywords:'model provider gateway 模型 供应商 网关'},
    {id:'mcp',label:t.mcpServices,subtitle:t.mcpSubtitle,icon:PlugIcon,keywords:'mcp server service 服务 工具 接入'},
    {id:'plugins',label:t.piPlugins,subtitle:t.pluginsSubtitle,icon:PuzzleIcon,keywords:'plugin package 插件'},
   ]},
@@ -199,32 +189,17 @@ export function SettingsPage({lang,prefs,onChangePrefs,onLocalPrefs,account,onAc
      <SyncSettings language={lang} preferences={prefs} onChanged={onLocalPrefs}/>
     </div>
    </div>
-   :section==='gateway'?<div className="mx-auto max-w-2xl pb-12">
-    {header(t.modelGateway,t.gatewaySubtitle)}
-    <form className="mt-7 overflow-hidden rounded-[14px] border border-border bg-card" onSubmit={saveGateway}>
-     <div className="divide-y divide-border">
-      <div className="flex flex-col gap-2 px-5 py-4">
-       <Label htmlFor="settings-gateway-url">{t.gatewayUrl}</Label>
-       <Input id="settings-gateway-url" onChange={e=>setGatewayUrl(e.target.value)} placeholder="https://example.com/v1" required type="url" value={gatewayUrl}/>
-      </div>
-      <div className="flex flex-col gap-2 px-5 py-4">
-       <Label htmlFor="settings-gateway-model">{t.modelId}</Label>
-       <Input id="settings-gateway-model" onChange={e=>setModelId(e.target.value)} required value={modelId}/>
-      </div>
-      <div className="flex flex-col gap-2 px-5 py-4">
-       <Label htmlFor="settings-gateway-key">{t.apiKey}</Label>
-       <Input autoComplete="off" id="settings-gateway-key" onChange={e=>setApiKey(e.target.value)} placeholder={gateway?.hasApiKey&&gateway.baseUrl===gatewayUrl.trim().replace(/\/$/,'')?t.keyHint:''} type="password" value={apiKey}/>
-      </div>
-      <div className="flex items-center justify-between gap-4 px-5 py-4">
-       <Label htmlFor="settings-gateway-images">{t.imageSupport}</Label>
-       <Switch aria-label={t.imageSupport} checked={supportsImages} id="settings-gateway-images" onCheckedChange={setSupportsImages}/>
-      </div>
-      <div className="flex items-center justify-between gap-4 px-5 py-4">
-       {gatewayMessage?<p className="text-[13px] leading-5 text-muted-foreground" role="status">{gatewayMessage}</p>:<span/>}
-       <Button type="submit">{t.save}</Button>
-      </div>
-     </div>
-    </form>
+   :section==='models'?<div className="mx-auto max-w-4xl pb-12">
+    {header(t.models,t.modelsSubtitle)}
+    <div className="mt-7">
+     <ModelProviders
+      account={account}
+      language={lang}
+      modelSource={prefs.modelSource}
+      onModelSourceChange={value=>onChangePrefs({...prefs,modelSource:value})}
+      onOpenAccount={()=>onSectionChange('account')}
+     />
+    </div>
    </div>
    :section==='mcp'?<div className="mx-auto max-w-3xl pb-12">
     {header(t.mcpServices,t.mcpSubtitle)}

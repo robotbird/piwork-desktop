@@ -84,7 +84,7 @@ function categorize(event:ToolEvent):ToolCategory{
   const name=event.name;
   if(name==='skill_bash'||name==='bash'||name==='powershell')return 'commands';
   if(name==='skill_read'||name==='project_read'||name==='project_list')return 'files';
-  if(name==='project_write'||name==='project_create_office')return 'writes';
+  if(name==='project_write'||name==='project_create_office'||name==='project_append_office')return 'writes';
   const lower=name.toLowerCase();
   if(typeof event.args?.query==='string'||lower.includes('search'))return 'searches';
   if(typeof event.args?.url==='string'||/fetch|reader|extract|browse/.test(lower))return 'fetches';
@@ -129,7 +129,7 @@ function ToolRow({event,copy,open,onToggle,onOpenFile}:{
   const shownLines=fullOutput?lines:preview;
   const path=event.path;
   const canOpen=path&&onOpenFile&&event.status==='completed'&&
-    (event.name==='project_write'||event.name==='project_create_office');
+    (event.name==='project_write'||event.name==='project_create_office'||event.name==='project_append_office');
   const category=categorize(event);
   const ActionIcon=category==='commands'?TerminalIcon:category==='writes'?FilePlus2Icon:category==='files'?FileTextIcon:category==='searches'||category==='fetches'?SearchIcon:WrenchIcon;
   const statusText=event.status==='running'?copy.running:failed?(event.reason?copy.reasons[event.reason]:copy.failed):copy.completed;

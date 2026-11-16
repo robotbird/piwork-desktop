@@ -18,7 +18,8 @@
 //
 // 用法:cd apps/desktop && pnpm dev:mac
 // 可选:PIWORK_DEV_ELECTRON_ARGS 追加传给 electron 的参数(默认 --no-sandbox,
-// 与 vite-plugin-electron 的默认一致)。重新安装 electron 依赖后 Info.plist
+// 与 vite-plugin-electron 的默认一致);PIWORK_DEV_PORT 指定 vite 端口(默认 5173,
+// 被其他项目占用且校验失败时使用)。重新安装 electron 依赖后 Info.plist
 // 补丁会丢失,脚本每次运行都会幂等地重新注入。
 
 import { createRequire } from 'node:module';
@@ -103,11 +104,26 @@ if (existsSync(lsregister)) {
 // 4. external 模式启动 vite(vite.config.ts 检测 PIWORK_DEV_ELECTRON=external 后不 spawn electron)
 process.env.PIWORK_DEV_ELECTRON = 'external';
 const { createServer } = await import('vite');
-const server = await createServer({ root: pkgRoot, configFile: path.join(pkgRoot, 'vite.config.ts') });
+const server = await createServer({
+  root: pkgRoot,
+  configFile: path.join(pkgRoot, 'vite.config.ts'),
+  ...(process.env.PIWORK_DEV_PORT ? { server: { port: Number(process.env.PIWORK_DEV_PORT), strictPort: true } } : {}),
+});
 await server.listen();
 const devUrl = server.resolvedUrls?.local?.[0];
 if (!devUrl) { await server.close(); die('无法获取 vite dev server 地址'); }
 log(`vite dev server 就绪:${devUrl}`);
+
+// localhost:port 可能被其他项目的 dev server 以 IPv4 抢占(vite 会退而绑定 IPv6,
+// 而 Chromium 解析 localhost 时可能打到错误页面),启动后逐一校验两个栈
+const devPort = new URL(devUrl).port || '80';
+for (const host of ['127.0.0.1', '[::1]']) {
+  const body = await fetch(`http://${host}:${devPort}/`, { signal: AbortSignal.timeout(3000) }).then((res) => res.text()).catch(() => null);
+  if (body !== null && !body.includes('src/main.tsx')) {
+    await server.close();
+    die(`端口 ${devPort} 上的 http://${host} 不是本应用(被其他 dev server 占用),请释放该端口或用 PIWORK_DEV_PORT=<端口> 指定其他端口。`);
+  }
+}
 
 // 5. 通过 open 启动(Launch Services 可见,后续 deep link 走 open-url 事件)
 const logDir = path.join(pkgRoot, 'node_modules', '.cache');
@@ -132,7 +148,8 @@ let watch = null;
 let launched = false;
 const shutdown = async () => {
   if (watch) clearInterval(watch);
-  for (const pid of findDevInstances()) process.kill(pid, 'SIGTERM');
+  setTimeout(() => process.exit(0), 3000).unref(); // server.close() 偶发挂住,兜底强制退出
+  for (const pid of findDevInstances()) { try { process.kill(pid, 'SIGTERM'); } catch { /* already gone */ } }
   try { await server.close(); } catch { /* already closed */ }
   process.exit(0);
 };

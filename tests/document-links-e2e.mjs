@@ -57,8 +57,8 @@ try{
     await page.getByRole('tab',{name:`技术 报告.${ext}`}).waitFor();
     assert.equal(await page.locator('.file-preview').getAttribute('data-collapsed'),null);
     assert.equal(await visible.locator('.error').count(),0);
-    const selector={pdf:'.pdf-preview',docx:'iframe[title="Word document preview"]',xlsx:'.xlsx-preview',pptx:'.pptx-slide'}[ext];
-    await visible.locator(selector).waitFor({timeout:15000});
+    // office 三件套经 LibreOffice→PDF 高保真预览,与 pdf 同一渲染形态(electron/office-preview.ts)
+    await visible.locator('.pdf-preview').waitFor({timeout:30000});
   }
   await page.getByRole('link',{name:'Markdown',exact:true}).click();await visible.getByText('Markdown preview fixture',{exact:true}).waitFor();
   await page.getByRole('link',{name:'HTML',exact:true}).click();await visible.frameLocator('iframe').getByText('HTML preview fixture').waitFor();
@@ -79,8 +79,7 @@ try{
   for(const ext of ['pdf','docx','xlsx','pptx']){
     await historical.filter({hasText:`技术 报告.${ext}`}).click();
     const body=page.locator('.dock-body:not([hidden])');
-    const selector={pdf:'.pdf-preview',docx:'iframe[title="Word document preview"]',xlsx:'.xlsx-preview',pptx:'.pptx-slide'}[ext];
-    await body.locator(selector).waitFor({timeout:15000});
+    await body.locator('.pdf-preview').waitFor({timeout:30000});
     assert.equal(await body.locator('.error').count(),0);
   }
   const historyCard=page.locator('.generated-file').filter({hasText:'技术 报告.pptx'});

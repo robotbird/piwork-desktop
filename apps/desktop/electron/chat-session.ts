@@ -4,44 +4,71 @@ import path from 'node:path';
 import type {McpConfig} from './mcp-config.ts';
 import type {GatewayInput} from './gateway.ts';
 import {validateGateway} from './gateway.ts';
-import {createProjectTools} from './project-tools.ts';
+import type {WorkerModelInput} from './model-providers/store.ts';
+import {validateWorkerModel} from './model-providers/store.ts';
+import {createProjectTools,type RenderPages} from './project-tools.ts';
 import type {ProjectRoot} from './project-files.ts';
 import {createSkillTools} from './skill-tools.ts';
 import {createScheduleTools,schedulingPrompt,type ScheduleCreateInput} from './schedule-tools.ts';
 import type {ChatEvent} from '../shared/types.ts';
 import {createQuestionTools,type RequestQuestions} from './question-tools.ts';
 import {capToolText,sanitizeArgs,toolFailureReason,toolResultText} from './tool-history.ts';
+import {extractToolSources} from './tool-sources.ts';
 import {PiToRuntimeMapper} from './pi-to-runtime.ts';
 import type {RuntimeEvent} from '../src/web/lib/runtime/protocol/events.ts';
+
+/* 新载荷为完整供应商声明(models 目录 + compat);旧版单模型 gateway 载荷(main 已不再
+   发送)仍被接受并翻译,保住既有单测/冒烟脚本与外部调用方 */
+function normalizeModelInput(input:WorkerModelInput|GatewayInput):WorkerModelInput{
+ if('models' in input&&Array.isArray((input as WorkerModelInput).models))return validateWorkerModel(input as WorkerModelInput);
+ const legacy=validateGateway(input as GatewayInput);
+ return validateWorkerModel({providerId:'piwork-custom',name:'Custom gateway',baseUrl:legacy.baseUrl,apiKey:legacy.apiKey||'local',api:legacy.api??'openai-completions',modelId:legacy.modelId,models:[{id:legacy.modelId,name:legacy.modelId,reasoning:false,input:legacy.supportsImages?['text','image']:['text'],contextWindow:128000,maxTokens:8192}]});
+}
+
+/** workspace 会话把 project_* 工具的相对 path 透传为绝对路径:卡片/预览/库注册都按绝对路径工作;
+    项目会话保持相对语义(带 label 前缀时先剥掉,再落到会话输出根目录) */
+function workspacePathArgument(workspace:ProjectRoot|undefined,relative:string):string{
+ if(!workspace)return relative;
+ const label=`${workspace.label}/`;
+ return path.resolve(workspace.root,relative.startsWith(label)?relative.slice(label.length):relative);
+}
 
 export class ChatSession {
  private session:AgentSession|null=null;
  private running=false;
  private aborted=false;
  private unsubscribe:(()=>void)|null=null;
+ /* tool_execution_end 不携带入参,来源抽取所需的 args 从 start 事件暂存(用后即清) */
+ private readonly toolArgs=new Map<string,Record<string,unknown>|undefined>();
  private readonly onEvent:(event:ChatEvent)=>void;
  private readonly onRuntimeEvent:((event:RuntimeEvent)=>void)|null;
  private readonly approve:(id:string,name:string,input:unknown)=>Promise<boolean>;
  private mapper:PiToRuntimeMapper|null=null;
  constructor(onEvent:(event:ChatEvent)=>void,onRuntimeEvent:((event:RuntimeEvent)=>void)|null=null,approve:(id:string,name:string,input:unknown)=>Promise<boolean>=async()=>false){this.onEvent=onEvent;this.onRuntimeEvent=onRuntimeEvent;this.approve=approve}
- async open(input:GatewayInput,cwd:string,agentDir:string,sessionFile?:string,skillPath?:string,mcp?:McpConfig,projectRoots?:ProjectRoot[],schedule?:{requestCreate:(input:ScheduleCreateInput)=>Promise<void>},requestQuestions?:RequestQuestions){
-  const config=validateGateway(input);
+ async open(input:WorkerModelInput|GatewayInput,cwd:string,agentDir:string,sessionFile?:string,skillPath?:string,mcp?:McpConfig,projectRoots?:ProjectRoot[],schedule?:{requestCreate:(input:ScheduleCreateInput)=>Promise<void>},requestQuestions?:RequestQuestions,chatWorkspace?:ProjectRoot,requestRender?:RenderPages){
+  const config=normalizeModelInput(input);
   const runtime=await ModelRuntime.create({modelsPath:null,authPath:`${agentDir}/auth.json`,refreshOnCreate:false});
-  runtime.registerProvider('piwork-custom',{name:'Custom gateway',baseUrl:config.baseUrl,api:config.api??'openai-completions',apiKey:config.apiKey||'local',models:[{id:config.modelId,name:config.modelId,reasoning:false,input:config.supportsImages?['text','image']:['text'],cost:{input:0,output:0,cacheRead:0,cacheWrite:0},contextWindow:128000,maxTokens:8192}]});
-  const model=runtime.getModel('piwork-custom',config.modelId);
+  // 供应商按安装项声明式注册:模型目录含 compat 兼容参数,选中模型从注册表解析
+  runtime.registerProvider(config.providerId,{name:config.name,baseUrl:config.baseUrl,api:config.api,apiKey:config.apiKey||'local',models:config.models.map(spec=>({id:spec.id,name:spec.name,reasoning:spec.reasoning,input:spec.input,cost:{input:0,output:0,cacheRead:0,cacheWrite:0},contextWindow:spec.contextWindow,maxTokens:spec.maxTokens,...(spec.compat?{compat:spec.compat}:{})}))});
+  const model=runtime.getModel(config.providerId,config.modelId);
   if(!model)throw new Error('Model unavailable');
+  const supportsImages=model.input.includes('image');
   // 从磁盘加载受管 agentDir(<userData>/pi)的 settings:已安装 pi 插件(pi.dev/packages)
   // 注册在 packages 数组,loader 据此解析包内 extensions/skills/prompts 并在对话中生效
   const settings=SettingsManager.create(cwd,agentDir);
   const approval:ExtensionFactory=pi=>{pi.on('tool_call',async event=>{if((event.toolName.startsWith('mcp__')||event.toolName==='skill_bash')&&!await this.approve(event.toolCallId,event.toolName,event.toolName==='skill_bash'?{...event.input,cwd:projectRoots?.[0]?.root??(skillPath?path.dirname(skillPath):cwd)}:event.input))return {block:true,reason:'Tool call not approved'}})};
   const extensions:ExtensionFactory[]=[...((mcp||skillPath)?[approval]:[]),...(mcp?[createMcpExtension({logPath:'/dev/null',loadConfig:()=>({servers:[{name:mcp.name,source:'desktop',config:mcp.type==='stdio'?{command:mcp.command!,args:mcp.args,env:mcp.env,description:mcp.description,exposure:'direct'}:{url:mcp.url!,headers:mcp.headers,description:mcp.description,exposure:'direct'}}],errors:[],autoEnableCodemode:false})})]:[])];
+  const documentPrompt=`Creating documents: when the user asks for a Word, PPT or Excel file, create the real file with project_create_office — never answer with a script or code for the user to run. For Word documents use blocks: heading (level 1-3) for structure, paragraphs with runs (bold for key judgments, code runs for inline identifiers), ordered or unordered lists for enumerations, tables for structured facts, quote for citations, a cover block with subtitle/meta for reports, pageBreak between major parts, and doc {"footer":true} for a page-number footer. Name files descriptively (e.g. 季度报告.docx). A tool call whose arguments exceed your output limit is rejected with truncated arguments — build long documents in chunks: create the file with the first group of blocks, continue with project_append_office (same path, next blocks, never repeat earlier blocks) until complete, keeping every call well under your limit. After creating a DOCX — and whenever the user asks for polished layout — call office_render on the first pages and inspect the returned images; fix real defects (clipped tables, overlapping or garbled text, broken numbering, bad spacing) by writing the file again, then re-render once. Uniformly blank or transparent images mean a renderer failure: stop visual checks and deliver the file. If image input is unavailable, skip office_render and verify content only.`;
   const systemPrompt=[
    'You are PiWork, a desktop assistant for answering questions and working with user-provided materials.',
    'After generating a document or report, include a bold Markdown link to each output file, for example **[Report.pptx](<project-folder/Report.pptx>)**. Use the exact path returned by the tool. Do not present output paths only as inline code. PiWork opens local document links in the preview panel.',
    'Use only the tools declared in the current request, through the native tool calling interface. Never emit tool-call markup or JSON as a substitute for a tool call. Only report actions supported by an actual tool result.',
    projectRoots
     ? `A local project is selected. Call project_list with an empty path first: the top-level directories are the project source folders, and the first one is the main folder. Project paths start with a source folder name (for example "${projectRoots[0].label}/notes.md"); a bare path resolves inside the main folder. Every source folder is readable, but project_write and project_create_office only work inside the main folder. When the user requests an HTML file, use project_write to deliver it and summarize the result in the reply.`
-    : 'No local project is selected. For local project materials, use the files attached to the conversation. If the task needs local project files that were not attached, ask the user to start a new chat with a project selected or attach the files. Do not assume access to a local directory. When delivering HTML without a project, put it in a fenced html block so PiWork can offer it as a file.',
+    : chatWorkspace
+     ? `No local project is selected. Your output workspace is the user's PiWork documents folder — files you create are saved on disk, shown under 我的文档 → AI 生成, and linked in the conversation. Use project_create_office for DOCX/XLSX/PPTX and project_write for text files (md/html/csv/…) with bare file names (e.g. "报告.docx"); files you created earlier may be replaced to apply fixes. project_create_office returns the absolute path — link that exact path in your reply. When the user wants an HTML file, deliver it with project_write. For reading materials, use the files attached to the conversation; if the task needs local files that were not attached, ask the user to attach them or start a new chat with a project selected. Do not assume access to a local directory.`
+     : 'No local project is selected. For local project materials, use the files attached to the conversation. If the task needs local project files that were not attached, ask the user to start a new chat with a project selected or attach the files. Do not assume access to a local directory. When delivering HTML without a project, put it in a fenced html block so PiWork can offer it as a file.',
+   ...(projectRoots||chatWorkspace?[documentPrompt]:[]),
    ...(requestQuestions?['When you need a user decision or missing information to proceed, use ask_user to present concise questions and choices. Treat skipped or cancelled answers as unanswered, never as approval.']:[]),
    // 前台对话注册 create_scheduled_task 时附带调度规则(web schedulingPrompt 的桌面版);
    // 定时任务的 worker 运行不带该工具,避免 Agent 递归建任务。
@@ -57,18 +84,22 @@ export class ChatSession {
   await loader.reload();
   // noTools:'builtin' 关闭默认编码工具(read/bash/edit/write)但保留扩展与自定义工具;
   // 原先的 tools 白名单无法容纳插件扩展注册的任意工具名,故改用此模式
-  const {session}=await createAgentSession({cwd,agentDir,model,modelRuntime:runtime,settingsManager:settings,resourceLoader:loader,sessionManager:sessionFile?SessionManager.open(sessionFile,undefined,cwd):SessionManager.inMemory(),noTools:'builtin',customTools:[...(requestQuestions?createQuestionTools(requestQuestions):[]),...(projectRoots?createProjectTools(projectRoots,this.approve,config.supportsImages===true):[]),...(skillPath?[...createSkillTools(skillPath),defineTool({...createBashToolDefinition(projectRoots?.[0]?.root??path.dirname(skillPath),{exposeSessionEnvironment:false,spawnHook:context=>({...context,cwd:projectRoots?.[0]?.root??path.dirname(skillPath)})}),name:'skill_bash'})]:[]),...(schedule?createScheduleTools(schedule.requestCreate):[])],thinkingLevel:'off'});
+  const {session}=await createAgentSession({cwd,agentDir,model,modelRuntime:runtime,settingsManager:settings,resourceLoader:loader,sessionManager:sessionFile?SessionManager.open(sessionFile,undefined,cwd):SessionManager.inMemory(),noTools:'builtin',customTools:[...(requestQuestions?createQuestionTools(requestQuestions):[]),...(projectRoots?createProjectTools(projectRoots,this.approve,supportsImages,{renderPages:requestRender}):chatWorkspace?createProjectTools([chatWorkspace],this.approve,supportsImages,{mode:'workspace',renderPages:requestRender}):[]),...(skillPath?[...createSkillTools(skillPath),defineTool({...createBashToolDefinition(projectRoots?.[0]?.root??path.dirname(skillPath),{exposeSessionEnvironment:false,spawnHook:context=>({...context,cwd:projectRoots?.[0]?.root??path.dirname(skillPath)})}),name:'skill_bash'})]:[]),...(schedule?createScheduleTools(schedule.requestCreate):[])],thinkingLevel:'off'});
   this.session=session;
   if(mcp)await session.bindExtensions({});
   this.unsubscribe=session.subscribe(event=>{
    if(this.mapper)for(const runtimeEvent of this.mapper.push(event))this.onRuntimeEvent?.(runtimeEvent);
    if(event.type==='message_update'&&event.assistantMessageEvent.type==='text_delta')this.onEvent({type:'delta',text:event.assistantMessageEvent.delta});
-   else if(event.type==='tool_execution_start')this.onEvent({type:'tool',id:event.toolCallId,name:event.toolName,status:'running',args:sanitizeArgs(event.args),startedAt:Date.now(),...((event.toolName.startsWith('project_')||event.toolName==='skill_read')&&typeof event.args?.path==='string'?{path:event.args.path}:{})});
+   else if(event.type==='tool_execution_start'){this.toolArgs.set(event.toolCallId,event.args);this.onEvent({type:'tool',id:event.toolCallId,name:event.toolName,status:'running',args:sanitizeArgs(event.args),startedAt:Date.now(),...((event.toolName.startsWith('project_')||event.toolName==='skill_read')&&typeof event.args?.path==='string'?{path:event.toolName.startsWith('project_')?workspacePathArgument(chatWorkspace,event.args.path):event.args.path}:{})})}
    else if(event.type==='tool_execution_update'){const partial=capToolText(toolResultText(event.partialResult));this.onEvent({type:'tool',id:event.toolCallId,name:event.toolName,status:'running',...(partial?{result:partial}:{})})}
    else if(event.type==='tool_execution_end'){
+    const startArgs=this.toolArgs.get(event.toolCallId);
     const message=capToolText(toolResultText(event.result));
     const reason=toolFailureReason(message);
-    this.onEvent({type:'tool',id:event.toolCallId,name:event.toolName,status:event.isError?'failed':'completed',...(message?{result:message}:{}),...(event.isError?{reason}:{}),...(typeof event.durationMs==='number'?{durationMs:event.durationMs}:{})});
+    const sources=event.isError?undefined:extractToolSources(event.toolName,startArgs,event.result);
+    this.toolArgs.delete(event.toolCallId);
+    // project_* 工具的完成事件也带 path(workspace 会话解析为绝对路径):主进程据此登记文档库、渲染端建卡片
+    this.onEvent({type:'tool',id:event.toolCallId,name:event.toolName,status:event.isError?'failed':'completed',...(event.toolName.startsWith('project_')&&typeof startArgs?.path==='string'?{path:workspacePathArgument(chatWorkspace,startArgs.path)}:{}),...(message?{result:message}:{}),...(event.isError?{reason}:{}),...(typeof event.durationMs==='number'?{durationMs:event.durationMs}:{}),...(sources?.length?{sources}:{})});
    }
   });
  }

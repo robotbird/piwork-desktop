@@ -14,7 +14,7 @@ const HtmlPreview=lazy(()=>import('./html-preview').then(module=>({default:modul
 /* 右侧常驻工具 dock(参考 deepseek-harness sidebar-right 的单 pane 多 tab 形态):
    guide(开始)/files(项目文件)/browser(内置浏览器)/document(文件预览)四类标签;
    所有已开标签的 body 常驻渲染(hidden 切换),浏览器 webview 因此在标签切换时保活。 */
-export type DockFile={path:string;content:string;kind:'text'|'html'|'image'|'pdf'|'docx'|'xlsx'|'pptx'|'unsupported';cache?:string;label?:string;virtual?:boolean};
+export type DockFile={path:string;content:string;kind:'text'|'html'|'image'|'pdf'|'docx'|'xlsx'|'pptx'|'loading'|'unsupported';cache?:string;label?:string;virtual?:boolean;notice?:string};
 export type DockTabKind='guide'|'files'|'browser'|'document';
 export type DockTab={id:string;kind:DockTabKind;title:string;file?:DockFile;url?:string;error?:string};
 
@@ -113,6 +113,8 @@ function DocumentBody({tab,words:word,language,selected,chatBusy,onAttach,onTabE
   if(!file)return <p>{word.unsupported}</p>;
   return <div className="dock-body-pad document-pad">
     <p>{file.label??file.path}</p>
+    {/* office 转 PDF 时引擎声明的缺失字体:灰色提示而非错误(高保真渲染已做别名回退) */}
+    {file.notice&&<p className="preview-notice">{file.notice}</p>}
     {!file.virtual&&<div className="preview-actions">
       <button onClick={()=>onOpenExternal(file)} type="button">{word.openExternal}</button>
       <button onClick={()=>onReveal(file)} type="button">{word.reveal}</button>
@@ -125,6 +127,7 @@ function DocumentBody({tab,words:word,language,selected,chatBusy,onAttach,onTabE
         :selected
           ?<Suspense fallback={<p>{word.loading}</p>}><HtmlPreview source={{kind:'project',projectId:selected,path:file.path}} content={file.content} language={language}/></Suspense>
           :<Suspense fallback={<p>{word.loading}</p>}><HtmlPreview source={{kind:'inline'}} content={file.content} language={language}/></Suspense>
+      :file.kind==='loading'?<p>{word.loading}</p>
       :file.kind==='unsupported'?<p>{word.unsupported}</p>
       :file.kind==='pptx'?<Suspense fallback={<p>{word.loading}</p>}><PptxPreview data={file.content} language={language}/></Suspense>
       :file.kind==='xlsx'?<Suspense fallback={<p>{word.loading}</p>}><XlsxPreview data={file.content} language={language}/></Suspense>

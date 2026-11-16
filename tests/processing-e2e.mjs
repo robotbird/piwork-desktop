@@ -49,6 +49,12 @@ try{
   assert.notEqual(await page.locator('.conversation-processing-trigger').innerText(),liveLabel);
   await page.getByRole('heading',{name:'Final answer'}).waitFor({timeout:20000});
   await page.getByRole('button',{name:'Send',exact:true}).waitFor();
+  // 复制按钮只取最终回答段,不得把上方“思考和处理过程”的叙述一起复制
+  const expectCopied='## Final answer\n\nThe notes have been reviewed.';
+  const readCopied=async()=>{let text='';for(let attempt=0;attempt<20&&text!==expectCopied;attempt++){await page.waitForTimeout(100);text=await app.evaluate(({clipboard})=>clipboard.readText())}return text};
+  await page.locator('article[data-role="assistant"]').hover();
+  await page.locator('article[data-role="assistant"] .conversation-message-actions').getByRole('button',{name:'Copy',exact:true}).click();
+  assert.equal(await readCopied(),expectCopied);
   const answerTypography=await page.locator('.conversation-reply p').last().evaluate(node=>{const s=getComputedStyle(node);return {font:s.fontFamily,size:s.fontSize,color:s.color,line:s.lineHeight}});
   assert.deepEqual(liveTypography,answerTypography);
   const panel=page.locator('.conversation-processing');const trigger=panel.locator(':scope > button');
@@ -56,7 +62,7 @@ try{
   const duration=await trigger.innerText();
   assert.equal(await trigger.getAttribute('aria-expanded'),'false');
   assert.equal(await page.getByText('Inspect the project notes',{exact:true}).count(),0);
-  const arrow=trigger.locator('svg');
+  const arrow=trigger.locator('svg.conversation-disclosure');
   await trigger.evaluate(node=>node.blur());
   await page.mouse.move(0,0);await page.waitForTimeout(200);assert.equal(await arrow.evaluate(node=>getComputedStyle(node).opacity),'0');
   await trigger.hover();await page.waitForTimeout(200);assert.equal(await arrow.evaluate(node=>getComputedStyle(node).opacity),'1');
@@ -103,10 +109,14 @@ try{
   await page.getByRole('heading',{name:'Final answer'}).waitFor();
   assert.match(await page.locator('.conversation-processing-trigger').innerText(),/^Worked for /);
   assert.equal(await page.locator('.conversation-processing-trigger').getAttribute('aria-expanded'),'false');
+  // 持久化历史(projectChatHistory 分段投影)的复制同样只取回答段
+  await page.locator('article[data-role="assistant"]').hover();
+  await page.locator('article[data-role="assistant"] .conversation-message-actions').getByRole('button',{name:'Copy',exact:true}).click();
+  assert.equal(await readCopied(),expectCopied);
   await page.evaluate(()=>window.desktop.setPreferences({appearance:'dark',language:'zh-CN'}));await page.reload();
   await page.getByRole('button',{name:'Review these notes',exact:true}).first().click();
   await page.getByRole('heading',{name:'Final answer'}).waitFor();
   assert.match(await page.locator('.conversation-processing-trigger').innerText(),/^用时 /);
   await page.locator('.conversation-processing-trigger').click();await page.screenshot({path:'.visual-tmp/processing-dark-zh.png'});
-  console.log('Processing: hover disclosure, nested keyboard disclosure, tool details, final answer, persisted timing, dark theme and Chinese passed',duration);
+  console.log('Processing: hover disclosure, nested keyboard disclosure, tool details, final answer, answer-only copy, persisted timing, dark theme and Chinese passed',duration);
 }finally{if(app)await app.close().catch(()=>{});server.closeAllConnections();await new Promise(resolve=>server.close(resolve));await rm(root,{recursive:true,force:true})}

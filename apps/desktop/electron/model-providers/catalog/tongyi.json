@@ -1,0 +1,1145 @@
+{
+ "packageId": "piwork-llm-tongyi",
+ "providerKey": "tongyi",
+ "version": "1.0.0",
+ "name": {
+  "en": "Tongyi",
+  "zh-CN": "通义"
+ },
+ "description": {
+  "en": "Alibaba Cloud Model Studio (DashScope) Tongyi Qwen chat models with thinking mode, tool calling, and vision.",
+  "zh-CN": "阿里云百炼通义千问系列模型，支持思考模式、工具调用与视觉理解。"
+ },
+ "baseUrl": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+ "networkHosts": [
+  "dashscope.aliyuncs.com"
+ ],
+ "validationModel": "qwen-turbo",
+ "helpUrl": "https://bailian.console.aliyun.com/?apiKey=1#/api-key",
+ "credentialFields": [
+  {
+   "variable": "api_key",
+   "type": "secret-input",
+   "label": {
+    "en": "API Key",
+    "zh-CN": "API Key"
+   },
+   "required": true,
+   "placeholder": {
+    "en": "Enter your API Key",
+    "zh-CN": "在此输入您的 API Key"
+   }
+  }
+ ],
+ "compat": {
+  "maxTokensField": "max_tokens",
+  "thinkingFormat": "qwen",
+  "supportsDeveloperRole": false,
+  "supportsReasoningEffort": false,
+  "supportsStore": false
+ },
+ "models": [
+  {
+   "modelId": "qwen3.8-max",
+   "label": {
+    "en": "qwen3.8-max",
+    "zh-CN": "qwen3.8-max"
+   },
+   "vision": true,
+   "reasoning": true,
+   "toolCall": true,
+   "contextSize": 1000000,
+   "defaultMaxTokens": 4096
+  },
+  {
+   "modelId": "qwen3.8-flash",
+   "label": {
+    "en": "qwen3.8-flash",
+    "zh-CN": "qwen3.8-flash"
+   },
+   "vision": true,
+   "reasoning": true,
+   "toolCall": true,
+   "contextSize": 1000000,
+   "defaultMaxTokens": 4096
+  },
+  {
+   "modelId": "qwen3.7-max",
+   "label": {
+    "en": "qwen3.7-max"
+   },
+   "vision": false,
+   "reasoning": true,
+   "toolCall": true,
+   "contextSize": 1000000,
+   "defaultMaxTokens": 8192
+  },
+  {
+   "modelId": "qwen3.7-plus",
+   "label": {
+    "en": "qwen3.7-plus",
+    "zh-CN": "qwen3.7-plus"
+   },
+   "vision": true,
+   "reasoning": true,
+   "toolCall": true,
+   "contextSize": 1000000,
+   "defaultMaxTokens": 8192
+  },
+  {
+   "modelId": "qwen3.7-plus-2026-05-26",
+   "label": {
+    "en": "qwen3.7-plus-2026-05-26(Qwen3.7)",
+    "zh-CN": "qwen3.7-plus-2026-05-26(Qwen3.7)"
+   },
+   "vision": true,
+   "reasoning": true,
+   "toolCall": true,
+   "contextSize": 1000000,
+   "defaultMaxTokens": 8192
+  },
+  {
+   "modelId": "qwen3.7-flash",
+   "label": {
+    "en": "qwen3.7-flash",
+    "zh-CN": "qwen3.7-flash"
+   },
+   "vision": true,
+   "reasoning": true,
+   "toolCall": true,
+   "contextSize": 1000000,
+   "defaultMaxTokens": 4096
+  },
+  {
+   "modelId": "qwen3.7-flash-2026-07-15",
+   "label": {
+    "en": "qwen3.7-flash-2026-07-15(Qwen3.7)",
+    "zh-CN": "qwen3.7-flash-2026-07-15(Qwen3.7)"
+   },
+   "vision": true,
+   "reasoning": true,
+   "toolCall": true,
+   "contextSize": 1000000,
+   "defaultMaxTokens": 4096
+  },
+  {
+   "modelId": "qwen3.6-plus",
+   "label": {
+    "en": "qwen3.6-plus"
+   },
+   "vision": true,
+   "reasoning": true,
+   "toolCall": true,
+   "contextSize": 1000000,
+   "defaultMaxTokens": 8192
+  },
+  {
+   "modelId": "qwen3.6-plus-2026-04-02",
+   "label": {
+    "en": "qwen3.6-plus-2026-04-02(Qwen3.6)"
+   },
+   "vision": true,
+   "reasoning": true,
+   "toolCall": true,
+   "contextSize": 1000000,
+   "defaultMaxTokens": 8192
+  },
+  {
+   "modelId": "qwen3.6-flash-2026-04-16",
+   "label": {
+    "en": "qwen3.6-flash-2026-04-16(Qwen3.6)"
+   },
+   "vision": true,
+   "reasoning": true,
+   "toolCall": true,
+   "contextSize": 1000000,
+   "defaultMaxTokens": 8192
+  },
+  {
+   "modelId": "qwen3.6-flash",
+   "label": {
+    "en": "qwen3.6-flash"
+   },
+   "vision": true,
+   "reasoning": true,
+   "toolCall": true,
+   "contextSize": 1000000,
+   "defaultMaxTokens": 8192
+  },
+  {
+   "modelId": "qwen3.5-plus",
+   "label": {
+    "en": "qwen3.5-plus"
+   },
+   "vision": true,
+   "reasoning": true,
+   "toolCall": true,
+   "contextSize": 1000000,
+   "defaultMaxTokens": 8192
+  },
+  {
+   "modelId": "qwen3.5-plus-2026-02-15",
+   "label": {
+    "en": "qwen3.5-plus-2026-02-15(Qwen3.5)"
+   },
+   "vision": true,
+   "reasoning": true,
+   "toolCall": true,
+   "contextSize": 1000000,
+   "defaultMaxTokens": 8192
+  },
+  {
+   "modelId": "qwen3.5-flash",
+   "label": {
+    "en": "qwen3.5-flash"
+   },
+   "vision": true,
+   "reasoning": true,
+   "toolCall": true,
+   "contextSize": 1000000,
+   "defaultMaxTokens": 8192
+  },
+  {
+   "modelId": "qwen3.5-flash-2026-02-23",
+   "label": {
+    "en": "qwen3.5-flash-2026-02-23(Qwen3.5)"
+   },
+   "vision": true,
+   "reasoning": true,
+   "toolCall": true,
+   "contextSize": 1000000,
+   "defaultMaxTokens": 8192
+  },
+  {
+   "modelId": "qvq-max",
+   "label": {
+    "en": "qvq-max"
+   },
+   "vision": true,
+   "reasoning": false,
+   "toolCall": false,
+   "contextSize": 131072,
+   "defaultMaxTokens": 2000
+  },
+  {
+   "modelId": "qwq-plus",
+   "label": {
+    "en": "qwq-plus"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": false,
+   "contextSize": 131072,
+   "defaultMaxTokens": 2000
+  },
+  {
+   "modelId": "kimi-k2.5",
+   "label": {
+    "en": "kimi-k2.5",
+    "zh-CN": "kimi-k2.5"
+   },
+   "vision": true,
+   "reasoning": true,
+   "toolCall": true,
+   "contextSize": 262144,
+   "defaultMaxTokens": 1024
+  },
+  {
+   "modelId": "kimi-k2-thinking",
+   "label": {
+    "en": "kimi-k2-thinking",
+    "zh-CN": "kimi-k2-thinking"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": true,
+   "contextSize": 262144,
+   "defaultMaxTokens": 1024
+  },
+  {
+   "modelId": "Moonshot-Kimi-K2-Instruct",
+   "label": {
+    "en": "Moonshot-Kimi-K2-Instruct",
+    "zh-CN": "Moonshot-Kimi-K2-Instruct"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": true,
+   "contextSize": 131072,
+   "defaultMaxTokens": 1024
+  },
+  {
+   "modelId": "deepseek-r1",
+   "label": {
+    "en": "DeepSeek-R1",
+    "zh-CN": "DeepSeek-R1"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": false,
+   "contextSize": 131072,
+   "defaultMaxTokens": 4096
+  },
+  {
+   "modelId": "deepseek-r1-distill-qwen-14b",
+   "label": {
+    "en": "DeepSeek-R1-Distill-Qwen-14B",
+    "zh-CN": "DeepSeek-R1-Distill-Qwen-14B"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": false,
+   "contextSize": 32000,
+   "defaultMaxTokens": 4096
+  },
+  {
+   "modelId": "deepseek-r1-distill-qwen-32b",
+   "label": {
+    "en": "DeepSeek-R1-Distill-Qwen-32B",
+    "zh-CN": "DeepSeek-R1-Distill-Qwen-32B"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": false,
+   "contextSize": 32000,
+   "defaultMaxTokens": 4096
+  },
+  {
+   "modelId": "deepseek-v4-pro",
+   "label": {
+    "en": "DeepSeek-V4-Pro",
+    "zh-CN": "DeepSeek-V4-Pro"
+   },
+   "vision": false,
+   "reasoning": true,
+   "toolCall": true,
+   "contextSize": 1048576,
+   "defaultMaxTokens": 4096
+  },
+  {
+   "modelId": "deepseek-v4.1-flash",
+   "label": {
+    "en": "DeepSeek-V4.1-Flash",
+    "zh-CN": "DeepSeek-V4.1-Flash"
+   },
+   "vision": true,
+   "reasoning": true,
+   "toolCall": true,
+   "contextSize": 1000000,
+   "defaultMaxTokens": 4096
+  },
+  {
+   "modelId": "deepseek-v4-flash-0731",
+   "label": {
+    "en": "DeepSeek-V4-Flash-0731",
+    "zh-CN": "DeepSeek-V4-Flash-0731"
+   },
+   "vision": false,
+   "reasoning": true,
+   "toolCall": true,
+   "contextSize": 1048576,
+   "defaultMaxTokens": 4096
+  },
+  {
+   "modelId": "deepseek-v4-flash",
+   "label": {
+    "en": "DeepSeek-V4-Flash",
+    "zh-CN": "DeepSeek-V4-Flash"
+   },
+   "vision": false,
+   "reasoning": true,
+   "toolCall": true,
+   "contextSize": 1048576,
+   "defaultMaxTokens": 4096
+  },
+  {
+   "modelId": "deepseek-v3.2-exp",
+   "label": {
+    "en": "DeepSeek-V3.2-exp",
+    "zh-CN": "DeepSeek-V3.2-exp"
+   },
+   "vision": false,
+   "reasoning": true,
+   "toolCall": true,
+   "contextSize": 131072,
+   "defaultMaxTokens": 4096
+  },
+  {
+   "modelId": "deepseek-v3.1",
+   "label": {
+    "en": "DeepSeek-V3.1",
+    "zh-CN": "DeepSeek-V3.1"
+   },
+   "vision": false,
+   "reasoning": true,
+   "toolCall": true,
+   "contextSize": 131072,
+   "defaultMaxTokens": 4096
+  },
+  {
+   "modelId": "deepseek-v3",
+   "label": {
+    "en": "DeepSeek-V3",
+    "zh-CN": "DeepSeek-V3"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": true,
+   "contextSize": 64000,
+   "defaultMaxTokens": 512
+  },
+  {
+   "modelId": "glm-5.2",
+   "label": {
+    "en": "glm-5.2",
+    "zh-CN": "glm-5.2"
+   },
+   "vision": false,
+   "reasoning": true,
+   "toolCall": true,
+   "contextSize": 1000000,
+   "defaultMaxTokens": 16384
+  },
+  {
+   "modelId": "glm-5.1",
+   "label": {
+    "en": "glm-5.1",
+    "zh-CN": "glm-5.1"
+   },
+   "vision": false,
+   "reasoning": true,
+   "toolCall": true,
+   "contextSize": 202752,
+   "defaultMaxTokens": 16384
+  },
+  {
+   "modelId": "glm-5",
+   "label": {
+    "en": "glm-5",
+    "zh-CN": "glm-5"
+   },
+   "vision": false,
+   "reasoning": true,
+   "toolCall": true,
+   "contextSize": 202752,
+   "defaultMaxTokens": 16384
+  },
+  {
+   "modelId": "glm-4.7",
+   "label": {
+    "en": "glm-4.7"
+   },
+   "vision": false,
+   "reasoning": true,
+   "toolCall": true,
+   "contextSize": 202752,
+   "defaultMaxTokens": 16384
+  },
+  {
+   "modelId": "MiniMax-M2.5",
+   "label": {
+    "en": "MiniMax-M2.5",
+    "zh-CN": "MiniMax-M2.5"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": true,
+   "contextSize": 196608,
+   "defaultMaxTokens": 8192
+  },
+  {
+   "modelId": "qwen3-max",
+   "label": {
+    "en": "qwen3-max"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": true,
+   "contextSize": 262144,
+   "defaultMaxTokens": 8192
+  },
+  {
+   "modelId": "qwen3-max-2025-09-23",
+   "label": {
+    "en": "qwen3-max-2025-09-23"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": true,
+   "contextSize": 262144,
+   "defaultMaxTokens": 8192
+  },
+  {
+   "modelId": "qwen3-max-2026-01-23",
+   "label": {
+    "en": "qwen3-max-2026-01-23"
+   },
+   "vision": false,
+   "reasoning": true,
+   "toolCall": true,
+   "contextSize": 262144,
+   "defaultMaxTokens": 8192
+  },
+  {
+   "modelId": "qwen3-max-preview",
+   "label": {
+    "en": "qwen3-max-preview"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": true,
+   "contextSize": 262144,
+   "defaultMaxTokens": 8192
+  },
+  {
+   "modelId": "qwen3-coder-plus",
+   "label": {
+    "en": "qwen3-coder-plus"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": false,
+   "contextSize": 1000000,
+   "defaultMaxTokens": 65536
+  },
+  {
+   "modelId": "qwen3-coder-480b-a35b-instruct",
+   "label": {
+    "en": "qwen3-coder-480b-a35b-instruct"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": false,
+   "contextSize": 262144,
+   "defaultMaxTokens": 65536
+  },
+  {
+   "modelId": "qwen3-coder-30b-a3b-instruct",
+   "label": {
+    "en": "qwen3-coder-30b-a3b-instruct"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": false,
+   "contextSize": 262144,
+   "defaultMaxTokens": 65536
+  },
+  {
+   "modelId": "qwen3-next-80b-a3b-instruct",
+   "label": {
+    "en": "qwen3-next-80b-a3b-instruct"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": true,
+   "contextSize": 131072,
+   "defaultMaxTokens": 8192
+  },
+  {
+   "modelId": "qwen3-next-80b-a3b-thinking",
+   "label": {
+    "en": "qwen3-next-80b-a3b-thinking"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": true,
+   "contextSize": 131072,
+   "defaultMaxTokens": 8192
+  },
+  {
+   "modelId": "qwen3-235b-a22b-thinking-2507",
+   "label": {
+    "en": "qwen3-235b-a22b-thinking-2507"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": true,
+   "contextSize": 131072,
+   "defaultMaxTokens": 8192
+  },
+  {
+   "modelId": "qwen3-235b-a22b-instruct-2507",
+   "label": {
+    "en": "qwen3-235b-a22b-instruct-2507"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": true,
+   "contextSize": 131072,
+   "defaultMaxTokens": 8192
+  },
+  {
+   "modelId": "qwen3-235b-a22b",
+   "label": {
+    "en": "qwen3-235b-a22b"
+   },
+   "vision": false,
+   "reasoning": true,
+   "toolCall": true,
+   "contextSize": 131072,
+   "defaultMaxTokens": 8192
+  },
+  {
+   "modelId": "qwen3-30b-a3b-instruct-2507",
+   "label": {
+    "en": "qwen3-30b-a3b-instruct-2507"
+   },
+   "vision": false,
+   "reasoning": true,
+   "toolCall": true,
+   "contextSize": 131072,
+   "defaultMaxTokens": 8192
+  },
+  {
+   "modelId": "qwen3-30b-a3b",
+   "label": {
+    "en": "qwen3-30b-a3b"
+   },
+   "vision": false,
+   "reasoning": true,
+   "toolCall": true,
+   "contextSize": 131072,
+   "defaultMaxTokens": 8192
+  },
+  {
+   "modelId": "qwen3-32b",
+   "label": {
+    "en": "qwen3-32b"
+   },
+   "vision": false,
+   "reasoning": true,
+   "toolCall": true,
+   "contextSize": 131072,
+   "defaultMaxTokens": 8192
+  },
+  {
+   "modelId": "qwen3-14b",
+   "label": {
+    "en": "qwen3-14b"
+   },
+   "vision": false,
+   "reasoning": true,
+   "toolCall": true,
+   "contextSize": 131072,
+   "defaultMaxTokens": 8192
+  },
+  {
+   "modelId": "qwen3-8b",
+   "label": {
+    "en": "qwen3-8b"
+   },
+   "vision": false,
+   "reasoning": true,
+   "toolCall": true,
+   "contextSize": 131072,
+   "defaultMaxTokens": 8192
+  },
+  {
+   "modelId": "qwen3-vl-plus",
+   "label": {
+    "en": "qwen3-vl-plus"
+   },
+   "vision": true,
+   "reasoning": true,
+   "toolCall": false,
+   "contextSize": 262144,
+   "defaultMaxTokens": 8192
+  },
+  {
+   "modelId": "qwen3-vl-plus-2025-09-23",
+   "label": {
+    "en": "qwen3-vl-plus-2025-09-23"
+   },
+   "vision": true,
+   "reasoning": true,
+   "toolCall": false,
+   "contextSize": 262144,
+   "defaultMaxTokens": 8192
+  },
+  {
+   "modelId": "qwen3-vl-235b-a22b-instruct",
+   "label": {
+    "en": "qwen3-vl-235b-a22b-instruct"
+   },
+   "vision": true,
+   "reasoning": false,
+   "toolCall": true,
+   "contextSize": 131072,
+   "defaultMaxTokens": 8192
+  },
+  {
+   "modelId": "qwen3-vl-235b-a22b-thinking",
+   "label": {
+    "en": "qwen3-vl-235b-a22b-thinking"
+   },
+   "vision": true,
+   "reasoning": false,
+   "toolCall": true,
+   "contextSize": 131072,
+   "defaultMaxTokens": 8192
+  },
+  {
+   "modelId": "qwen3-vl-30b-a3b-instruct",
+   "label": {
+    "en": "qwen3-vl-30b-a3b-instruct"
+   },
+   "vision": true,
+   "reasoning": false,
+   "toolCall": true,
+   "contextSize": 131072,
+   "defaultMaxTokens": 8192
+  },
+  {
+   "modelId": "qwen3-vl-30b-a3b-thinking",
+   "label": {
+    "en": "qwen3-vl-30b-a3b-thinking"
+   },
+   "vision": true,
+   "reasoning": false,
+   "toolCall": true,
+   "contextSize": 131072,
+   "defaultMaxTokens": 8192
+  },
+  {
+   "modelId": "qwen-plus-latest",
+   "label": {
+    "en": "qwen-plus-latest(Qwen3)"
+   },
+   "vision": false,
+   "reasoning": true,
+   "toolCall": true,
+   "contextSize": 1000000,
+   "defaultMaxTokens": 8192
+  },
+  {
+   "modelId": "qwen-plus-2025-07-28",
+   "label": {
+    "en": "qwen-plus-2025-07-28(Qwen3)"
+   },
+   "vision": false,
+   "reasoning": true,
+   "toolCall": true,
+   "contextSize": 1000000,
+   "defaultMaxTokens": 8192
+  },
+  {
+   "modelId": "qwen-plus-2025-04-28",
+   "label": {
+    "en": "qwen-plus-2025-04-28(Qwen3)"
+   },
+   "vision": false,
+   "reasoning": true,
+   "toolCall": true,
+   "contextSize": 131072,
+   "defaultMaxTokens": 8192
+  },
+  {
+   "modelId": "qwen-plus-0125",
+   "label": {
+    "en": "qwen-plus-0125"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": true,
+   "contextSize": 131072,
+   "defaultMaxTokens": 8192
+  },
+  {
+   "modelId": "qwen-plus-0112",
+   "label": {
+    "en": "qwen-plus-0112"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": true,
+   "contextSize": 131072,
+   "defaultMaxTokens": 8192
+  },
+  {
+   "modelId": "qwen-plus-1220",
+   "label": {
+    "en": "qwen-plus-1220"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": true,
+   "contextSize": 131072,
+   "defaultMaxTokens": 8192
+  },
+  {
+   "modelId": "qwen-plus-chat",
+   "label": {
+    "en": "qwen-plus-chat"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": true,
+   "contextSize": 32768,
+   "defaultMaxTokens": 2000
+  },
+  {
+   "modelId": "qwen-plus",
+   "label": {
+    "en": "qwen-plus"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": true,
+   "contextSize": 1000000,
+   "defaultMaxTokens": 8192
+  },
+  {
+   "modelId": "qwen-turbo-chat",
+   "label": {
+    "en": "qwen-turbo-chat"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": true,
+   "contextSize": 8192,
+   "defaultMaxTokens": 1500
+  },
+  {
+   "modelId": "qwen-turbo",
+   "label": {
+    "en": "qwen-turbo"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": true,
+   "contextSize": 131072,
+   "defaultMaxTokens": 2000
+  },
+  {
+   "modelId": "qwen-max",
+   "label": {
+    "en": "qwen-max"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": true,
+   "contextSize": 32768,
+   "defaultMaxTokens": 8192
+  },
+  {
+   "modelId": "qwen-max-longcontext",
+   "label": {
+    "en": "qwen-max-longcontext"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": true,
+   "contextSize": 32000,
+   "defaultMaxTokens": 8000
+  },
+  {
+   "modelId": "qwen-vl-max",
+   "label": {
+    "en": "qwen-vl-max"
+   },
+   "vision": true,
+   "reasoning": false,
+   "toolCall": false,
+   "contextSize": 131072,
+   "defaultMaxTokens": 2000
+  },
+  {
+   "modelId": "qwen-vl-plus",
+   "label": {
+    "en": "qwen-vl-plus"
+   },
+   "vision": true,
+   "reasoning": false,
+   "toolCall": false,
+   "contextSize": 131072,
+   "defaultMaxTokens": 2000
+  },
+  {
+   "modelId": "qwen-long",
+   "label": {
+    "en": "qwen-long"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": false,
+   "contextSize": 10000000,
+   "defaultMaxTokens": 2000
+  },
+  {
+   "modelId": "qwen-math-plus-latest",
+   "label": {
+    "en": "qwen-math-plus-latest"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": false,
+   "contextSize": 4096,
+   "defaultMaxTokens": 3072
+  },
+  {
+   "modelId": "qwen-math-plus-0919",
+   "label": {
+    "en": "qwen-math-plus-0919"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": false,
+   "contextSize": 4096,
+   "defaultMaxTokens": 3072
+  },
+  {
+   "modelId": "qwen-math-plus-0816",
+   "label": {
+    "en": "qwen-math-plus-0816"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": false,
+   "contextSize": 4096,
+   "defaultMaxTokens": 3072
+  },
+  {
+   "modelId": "qwen-math-plus",
+   "label": {
+    "en": "qwen-math-plus"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": false,
+   "contextSize": 4096,
+   "defaultMaxTokens": 3072
+  },
+  {
+   "modelId": "qwen-math-turbo",
+   "label": {
+    "en": "qwen-math-turbo"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": false,
+   "contextSize": 4096,
+   "defaultMaxTokens": 3072
+  },
+  {
+   "modelId": "qwen-mt-plus",
+   "label": {
+    "en": "qwen-mt-plus"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": false,
+   "contextSize": 16384,
+   "defaultMaxTokens": 4096
+  },
+  {
+   "modelId": "qwen-mt-turbo",
+   "label": {
+    "en": "qwen-mt-turbo"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": false,
+   "contextSize": 16384,
+   "defaultMaxTokens": 4096
+  },
+  {
+   "modelId": "qwen-coder-turbo",
+   "label": {
+    "en": "qwen-coder-turbo"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": false,
+   "contextSize": 131072,
+   "defaultMaxTokens": 8192
+  },
+  {
+   "modelId": "qwen-flash-2025-07-28",
+   "label": {
+    "en": "qwen-flash-2025-07-28(Qwen3)"
+   },
+   "vision": false,
+   "reasoning": true,
+   "toolCall": true,
+   "contextSize": 1000000,
+   "defaultMaxTokens": 995904
+  },
+  {
+   "modelId": "qwen-flash",
+   "label": {
+    "en": "qwen-flash"
+   },
+   "vision": false,
+   "reasoning": true,
+   "toolCall": true,
+   "contextSize": 1000000,
+   "defaultMaxTokens": 32768
+  },
+  {
+   "modelId": "farui-plus",
+   "label": {
+    "en": "farui-plus"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": true,
+   "contextSize": 12288,
+   "defaultMaxTokens": 2000
+  },
+  {
+   "modelId": "deepseek-v3.2",
+   "label": {
+    "en": "DeepSeek-V3.2",
+    "zh-CN": "DeepSeek-V3.2"
+   },
+   "vision": false,
+   "reasoning": true,
+   "toolCall": true,
+   "contextSize": 131072,
+   "defaultMaxTokens": 4096
+  },
+  {
+   "modelId": "qwen-max-0403",
+   "label": {
+    "en": "qwen-max-0403"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": true,
+   "contextSize": 8000,
+   "defaultMaxTokens": 2000
+  },
+  {
+   "modelId": "qwen-plus-0723",
+   "label": {
+    "en": "qwen-plus-0723"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": true,
+   "contextSize": 32000,
+   "defaultMaxTokens": 8000
+  },
+  {
+   "modelId": "qwen-plus-0806",
+   "label": {
+    "en": "qwen-plus-0806"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": true,
+   "contextSize": 131072,
+   "defaultMaxTokens": 8192
+  },
+  {
+   "modelId": "qwen-plus-0919",
+   "label": {
+    "en": "qwen-plus-0919"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": true,
+   "contextSize": 131072,
+   "defaultMaxTokens": 8192
+  },
+  {
+   "modelId": "qwen-plus-1125",
+   "label": {
+    "en": "qwen-plus-1125"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": true,
+   "contextSize": 131072,
+   "defaultMaxTokens": 8192
+  },
+  {
+   "modelId": "qwen-plus-1127",
+   "label": {
+    "en": "qwen-plus-1127"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": true,
+   "contextSize": 131072,
+   "defaultMaxTokens": 8192
+  },
+  {
+   "modelId": "qwen-turbo-0624",
+   "label": {
+    "en": "qwen-turbo-0624"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": false,
+   "contextSize": 8000,
+   "defaultMaxTokens": 2000
+  },
+  {
+   "modelId": "qwen-turbo-0919",
+   "label": {
+    "en": "qwen-turbo-0919"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": false,
+   "contextSize": 131072,
+   "defaultMaxTokens": 8192
+  },
+  {
+   "modelId": "qwen-vl-max-0809",
+   "label": {
+    "en": "qwen-vl-max-0809"
+   },
+   "vision": true,
+   "reasoning": false,
+   "toolCall": false,
+   "contextSize": 32000,
+   "defaultMaxTokens": 2000
+  },
+  {
+   "modelId": "qwen-vl-plus-0809",
+   "label": {
+    "en": "qwen-vl-plus-0809"
+   },
+   "vision": true,
+   "reasoning": false,
+   "toolCall": false,
+   "contextSize": 32768,
+   "defaultMaxTokens": 2000
+  },
+  {
+   "modelId": "qwen3-coder-plus-2025-09-23",
+   "label": {
+    "en": "qwen3-coder-plus-2025-09-23"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": false,
+   "contextSize": 1000000,
+   "defaultMaxTokens": 65536
+  },
+  {
+   "modelId": "qwen3-omni-flash-2025-12-01",
+   "label": {
+    "en": "qwen3-omni-flash-2025-12-01"
+   },
+   "vision": true,
+   "reasoning": true,
+   "toolCall": false,
+   "contextSize": 65536,
+   "defaultMaxTokens": 8192
+  },
+  {
+   "modelId": "qwen3-vl-flash",
+   "label": {
+    "en": "qwen3-vl-flash"
+   },
+   "vision": true,
+   "reasoning": true,
+   "toolCall": true,
+   "contextSize": 131072,
+   "defaultMaxTokens": 8192
+  }
+ ]
+}

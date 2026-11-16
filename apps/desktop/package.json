@@ -17,10 +17,11 @@
   },
   "dependencies": {
     "@ai-sdk/react": "4.0.16",
-    "@earendil-works/pi-agent-core": "1.5.0",
-    "@earendil-works/pi-ai": "1.5.0",
-    "@earendil-works/pi-coding-agent": "1.5.0",
-    "@earendil-works/pi-mcp": "1.5.0",
+    "@deepseek-ai/libreoffice-kit": "^0.2.3",
+    "@earendil-works/pi-agent-core": "1.5.2",
+    "@earendil-works/pi-ai": "1.5.2",
+    "@earendil-works/pi-coding-agent": "1.5.2",
+    "@earendil-works/pi-mcp": "1.5.2",
     "@fontsource-variable/geist": "5.3.0",
     "@fontsource-variable/geist-mono": "5.3.0",
     "@office-kit/pptx": "0.28.0",
@@ -97,7 +98,10 @@
     "files": [
       "dist/**",
       "dist-electron/**",
-      "package.json"
+      "package.json",
+      "!**/node_modules/@deepseek-ai/libreoffice-kit-win32-*/**",
+      "!**/node_modules/@deepseek-ai/libreoffice-kit-darwin-x64/**",
+      "!**/node_modules/@deepseek-ai/libreoffice-kit-wasm/**"
     ],
     "mac": {
       "category": "public.app-category.productivity",
@@ -137,7 +141,8 @@
       ]
     },
     "asarUnpack": [
-      "**/node_modules/better-sqlite3/**"
+      "**/node_modules/better-sqlite3/**",
+      "**/node_modules/@deepseek-ai/libreoffice-kit-darwin-arm64/**"
     ],
     "extraResources": [
       {

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,writeFile,readFile,rm,symlink,copyFile,mkdir} from 'node:fs/promises';
+import {mkdtemp,writeFile,readFile,rm,symlink,copyFile,mkdir,realpath} from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import {createServer} from 'node:http';
@@ -90,4 +90,58 @@ test('creates Word, spreadsheet and presentation files only after approval witho
  const input={title:'工作报告',paragraphs:['中文正文'],rows:[['项目','数量'],['资料','42']],slides:[{title:'中文幻灯片',body:'办公内容'}]};
  for(const ext of ['docx','xlsx','pptx']){await invoke(create,{...input,path:`result.${ext}`});const extracted=(await invoke(read,{path:`result.${ext}`})).content[0].text;assert.match(extracted,ext==='pptx'?/中文幻灯片/:/项目/);assert.match(extracted,/42/)}
  const before=await readFile(path.join(root,'result.docx'));await assert.rejects(invoke(create,{...input,path:'result.docx'}),/already exists/);assert.deepEqual(await readFile(path.join(root,'result.docx')),before);allowed=false;await assert.rejects(invoke(create,{...input,path:'denied.docx'}),/not approved/);await assert.rejects(readFile(path.join(root,'denied.docx')),/ENOENT/);await assert.rejects(invoke(create,{...input,path:'../escape.docx'}));assert.equal(calls.length,4);
+});
+
+test('workspace mode writes the chat output folder, allows replacement and renders for self-check',async t=>{
+ const root=await mkdtemp(path.join(os.tmpdir(),'piwork-workspace-tools-'));t.after(()=>rm(root,{recursive:true,force:true}));
+ const renders=[];const approved=[];const tools=createProjectTools([{root,label:'AI 生成'}],async(_id,name,input)=>{approved.push(input);return true},true,{mode:'workspace',renderPages:async(absPath,pages)=>{renders.push([absPath,pages]);return {pageCount:3,missingFonts:['Foo'],images:[{data:'Zm9v',mimeType:'image/png',width:10,height:10}]}}});
+ const invoke=(tool,args)=>tool.execute('id',args,undefined,undefined,{});
+ const office=tools.find(tool=>tool.name==='project_create_office'),write=tools.find(tool=>tool.name==='project_write'),render=tools.find(tool=>tool.name==='office_render'),read=tools.find(tool=>tool.name==='project_read');
+ assert.ok(office&&write&&render&&read);
+ // blocks 文档落到 workspace 根,结果包含供回复引用的绝对路径
+ const created=await invoke(office,{path:'报告.docx',title:'季度报告',doc:{footer:true},blocks:[{type:'heading',level:1,text:'一、结论'}]});
+ assert.match(created.content[0].text,/Created 报告\.docx/);
+ assert.match(created.content[0].text,new RegExp(root.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')));
+ assert.equal(Buffer.from(await readFile(path.join(root,'报告.docx'))).subarray(0,2).toString('ascii'),'PK');
+ // 修正迭代允许覆盖本会话已创建的文件(项目模式则拒绝,上面的测试已覆盖)
+ const replaced=await invoke(office,{path:'报告.docx',title:'季度报告修订',blocks:[{type:'heading',level:1,text:'二、结论'}]});
+ assert.match(replaced.content[0].text,/Created 报告\.docx/);
+ assert.deepEqual(approved.map(item=>item.action),['create','replace']);
+ // office_render 走注入的渲染回调,返回文本摘要+图片块;拒绝非 Office 文件
+ const outcome=await invoke(render,{path:'报告.docx',pages:[1,3]});
+ const summary=JSON.parse(outcome.content[0].text);
+ assert.equal(summary.pageCount,3);assert.deepEqual(summary.missingFonts,['Foo']);assert.equal(summary.rendered,1);
+ assert.equal(outcome.content[1].type,'image');assert.equal(outcome.content[1].mimeType,'image/png');
+ assert.deepEqual(renders[0],[await realpath(path.join(root,'报告.docx')),[1,3]]);
+ await assert.rejects(invoke(render,{path:'说明.txt'}));
+ // 文本写入同样返回绝对路径
+ const saved=await invoke(write,{path:'notes.md',content:'hello'});
+ assert.match(saved.content[0].text,new RegExp(root.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')));
+});
+
+test('project_append_office merges sidecar blocks and rebuilds the document',async t=>{
+ const {readFile}=await import('node:fs/promises');
+ const root=await mkdtemp(path.join(os.tmpdir(),'piwork-append-tools-'));t.after(()=>rm(root,{recursive:true,force:true}));
+ const approved=[];const tools=createProjectTools([{root,label:'AI 生成'}],async(_id,name,input)=>{approved.push({name,input});return true},false,{mode:'workspace'});
+ const invoke=(tool,args)=>tool.execute('id',args,undefined,undefined,{});
+ const create=tools.find(tool=>tool.name==='project_create_office'),append=tools.find(tool=>tool.name==='project_append_office'),read=tools.find(tool=>tool.name==='project_read');
+ // 第 1 块:创建(带 blocks → sidecar)
+ await invoke(create,{path:'长报告.docx',title:'长报告',doc:{footer:true},blocks:[{type:'heading',level:1,text:'第一部分'},{type:'paragraph',text:'第一段'}]});
+ // 第 2 块:分块追加(blocks 传 JSON 字符串 + 模型自然写法)
+ await invoke(append,{path:'长报告.docx',blocks:JSON.stringify([{type:'heading',level:1,text:'第二部分'},{type:'paragraph',runs:[{text:'来源：'},{code:'demo-ref'}]},{type:'table',header:['项','值'],rows:[['a','1']]}])});
+ // 合并后的文档包含全部内容
+ const extracted=(await invoke(read,{path:'长报告.docx'})).content[0].text;
+ assert.match(extracted,/第一部分/);assert.match(extracted,/第二部分/);assert.match(extracted,/demo-ref/);assert.match(extracted,/长报告/);
+ // 审批载荷:create + append(append 动作为 append 且带追加块数)
+ assert.equal(approved.length,2);
+ assert.equal(approved[0].name,'project_create_office');
+ assert.equal(approved[1].name,'project_append_office');
+ assert.equal(approved[1].input.action,'append');assert.equal(approved[1].input.appended,3);
+ // 重复追加叠加而非清空
+ await invoke(append,{path:'长报告.docx',blocks:[{type:'paragraph',text:'第三段'}]});
+ const again=(await invoke(read,{path:'长报告.docx'})).content[0].text;
+ assert.match(again,/第三段/);assert.match(again,/第一部分/);
+ // 无 sidecar(纯 paragraphs 创建的旧文件)→ 明确报错引导重建
+ await invoke(create,{path:'legacy.docx',title:'L',paragraphs:['旧式']});
+ await assert.rejects(invoke(append,{path:'legacy.docx',blocks:[{type:'paragraph',text:'x'}]}),/No saved blocks/);
 });

@@ -1,0 +1,88 @@
+{
+ "packageId": "piwork-llm-deepseek",
+ "providerKey": "deepseek",
+ "version": "1.0.0",
+ "name": {
+  "en": "deepseek",
+  "zh-CN": "深度求索"
+ },
+ "description": {
+  "en": "Official DeepSeek models with reasoning, tool calling, and native vision in V4.1 Flash.",
+  "zh-CN": "DeepSeek 官方模型，支持推理、工具调用和 V4.1 Flash 原生视觉理解。"
+ },
+ "baseUrl": "https://api.deepseek.com",
+ "networkHosts": [
+  "api.deepseek.com"
+ ],
+ "validationModel": "deepseek-v4-flash",
+ "helpUrl": "https://platform.deepseek.com/api_keys",
+ "credentialFields": [
+  {
+   "variable": "api_key",
+   "type": "secret-input",
+   "label": {
+    "en": "API Key",
+    "zh-CN": "API Key"
+   },
+   "required": true,
+   "placeholder": {
+    "en": "Enter your API Key",
+    "zh-CN": "在此输入您的 API Key"
+   }
+  }
+ ],
+ "compat": {
+  "maxTokensField": "max_tokens",
+  "thinkingFormat": "deepseek"
+ },
+ "models": [
+  {
+   "modelId": "deepseek-flash",
+   "label": {
+    "en": "DeepSeek V4.1 Flash",
+    "zh-CN": "DeepSeek V4.1 Flash"
+   },
+   "vision": true,
+   "reasoning": true,
+   "toolCall": true,
+   "contextSize": 1000000,
+   "defaultMaxTokens": 65536
+  },
+  {
+   "modelId": "deepseek-v4-flash",
+   "label": {
+    "en": "deepseek-v4-flash",
+    "zh-CN": "deepseek-v4-flash"
+   },
+   "vision": false,
+   "reasoning": true,
+   "toolCall": true,
+   "contextSize": 1000000,
+   "defaultMaxTokens": 4096
+  },
+  {
+   "modelId": "deepseek-v4-flash-vision-exp",
+   "label": {
+    "en": "deepseek-v4-flash-vision-exp",
+    "zh-CN": "deepseek-v4-flash-vision-exp"
+   },
+   "vision": true,
+   "reasoning": true,
+   "toolCall": true,
+   "contextSize": 1000000,
+   "defaultMaxTokens": 4096
+  },
+  {
+   "modelId": "deepseek-v4-pro",
+   "label": {
+    "en": "deepseek-v4-pro",
+    "zh-CN": "deepseek-v4-pro"
+   },
+   "vision": false,
+   "reasoning": true,
+   "toolCall": true,
+   "contextSize": 1000000,
+   "defaultMaxTokens": 4096
+  }
+ ]
+}

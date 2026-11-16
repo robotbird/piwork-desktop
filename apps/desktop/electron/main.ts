@@ -1,11 +1,11 @@
 import {assertDocumentReference,cacheGeneratedDocument} from './generated-document';
-import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell, utilityProcess, powerMonitor } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, shell, utilityProcess, powerMonitor } from 'electron';
 import { randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { Preferences, Project, ChatEvent, ChatChunkMessage, ChatSummary, PickedAttachment, LocalSkill, McpServer, McpInput, Schedule, ScheduleRun, ScheduleInput, ScheduleCreateRequest, ApprovalRequest, ApprovalDecision, QuestionRequest, QuestionResponse } from '../shared/types';
-import { listProjectEntries, searchProjectEntries, splitProjectPath, resolveInside, saveProjectMarkdown, readProjectText, readProjectImage, readProjectPdf, readProjectDocx, readProjectXlsx, readProjectPptx, verifyImageBytes, imageExtension, type ProjectRoot } from './project-files';
+import type { Preferences, Project, ChatEvent, ChatChunkMessage, ChatSummary, PickedAttachment, LocalSkill, McpServer, McpInput, Schedule, ScheduleRun, ScheduleInput, ScheduleCreateRequest, OfficeRenderRequest, OfficeRenderResult, ApprovalRequest, ApprovalDecision, QuestionRequest, QuestionResponse } from '../shared/types';
+import { listProjectEntries, searchProjectEntries, splitProjectPath, resolveInside, saveProjectMarkdown, readProjectText, readProjectImage, readProjectPdf, verifyImageBytes, imageExtension, type ProjectRoot } from './project-files';
 import { listLibrary, createLibraryFolder, saveLibraryNote, uploadLibraryFiles, renameLibraryItem, moveLibraryItem, registerAiFile, forgetLibraryItem, ensureLibrary } from './library-store';
 import {completeAccountLogin,setAccountNotifier,accountStatus,openAccountLogin,logoutAccount,accountSyncAvailable,accountSyncTransport,listWebHistory,readWebHistory,openWebHistory} from './account';
 import {SyncJournal,type SyncAccount} from './sync-journal';
@@ -14,11 +14,15 @@ import {syncOneChat,prepareSyncRun} from './sync-engine';
 import {appendRemoteHistory} from './sync-pi-history';
 import {startAccountBridge} from './account-bridge';
 import {validateQuestionResponse} from './question-tools';
-import { validateGateway, type GatewayConfig } from './gateway';
+import {defaultCustomModel,installFromBuffer,installFromCatalog,legacyGatewayGet,legacyGatewaySet,loadModelProviders,modelProvidersView,removeInstallation,resolveCustomModel,resolveScheduledModel,setDefaultModelValue,setModelProvidersNotifier,updateInstallation} from './model-providers/service';
+import type {WorkerModelInput} from './model-providers/store';
 import { SessionManager, loadSkillsFromDir } from '@earendil-works/pi-coding-agent';
 import {addProjectTextAttachment,addPickedAttachment,readChatAttachment,type PickedAttachmentContent} from './chat-attachment';
-import {projectChatHistory} from './tool-history';
+import {locateUserEntry,projectChatHistory} from './tool-history';
+import {faviconDataUrl} from './favicons';
+import {sourceMeta} from './source-meta';
 import {allowedNavigation,developmentServerUrl} from './navigation';
+import {createOfficePreview} from './office-preview';
 import {validateMcp} from './mcp-config';
 import {installPiPackage,listInstalledPiPackages,piAgentDir,searchPiPackageCatalog,uninstallPiPackage} from './pi-packages';
 import {cancelAppUpdateDownload,checkForAppUpdate,downloadAppUpdate,getAppUpdateState,openAppUpdateInstaller,scheduleAppUpdateAutoCheck,setAppUpdateNotifier} from './app-update';
@@ -32,7 +36,7 @@ const defaults:Preferences={appearance:'system',language:'system',permission:'co
 type State={preferences:Preferences;projects:StoredProject[];chats?:ChatSummary[];skills?:LocalSkill[];dismissedSkills?:string[];mcpServers?:McpServer[];schedules?:Schedule[];scheduleRuns?:ScheduleRun[];approvalAllowlist?:Record<string,string[]>};
 let state:State={preferences:defaults,projects:[]};
 function statePath(){return path.join(app.getPath('userData'),'settings.json')}
-function validPreferences(p:Preferences){return p && ['system','light','dark'].includes(p.appearance)&&['system','zh-CN','en'].includes(p.language)&&(p.syncEnabled===undefined||typeof p.syncEnabled==='boolean')&&(p.permission===undefined||['confirm','auto','full'].includes(p.permission))}
+function validPreferences(p:Preferences){return p && ['system','light','dark'].includes(p.appearance)&&['system','zh-CN','en'].includes(p.language)&&(p.syncEnabled===undefined||typeof p.syncEnabled==='boolean')&&(p.permission===undefined||['confirm','auto','full'].includes(p.permission))&&(p.modelSource===undefined||['account','custom'].includes(p.modelSource))}
 function validState(value:unknown):value is State {if(!value||typeof value!=='object'||Array.isArray(value))return false;const v=value as Record<string,unknown>;if(!validPreferences(v.preferences as Preferences)||!Array.isArray(v.projects))return false;for(const key of ['projects','chats','skills','mcpServers','schedules','scheduleRuns']){const items=v[key];if(items===undefined&&key!=='projects')continue;if(!Array.isArray(items)||items.some(item=>!item||typeof item!=='object'||Array.isArray(item)))return false}if(v.dismissedSkills!==undefined&&(!Array.isArray(v.dismissedSkills)||!v.dismissedSkills.every(item=>typeof item==='string')))return false;if(v.approvalAllowlist!==undefined&&(!v.approvalAllowlist||typeof v.approvalAllowlist!=='object'||Array.isArray(v.approvalAllowlist)||!Object.values(v.approvalAllowlist).every(list=>Array.isArray(list)&&list.every(item=>typeof item==='string'))))return false;return true}
 let storage:SettingsStorage<State>;
 /* 旧版单路径记录升级为 folders;单条损坏数据回退为占位文件夹,由具体操作暴露错误。
@@ -70,17 +74,16 @@ async function syncDefaultSkills(){
  if(JSON.stringify(preview.skills)===JSON.stringify(state.skills??[]))return;
  await update(reconcile);
 }
-type StoredGateway={baseUrl:string;modelId:string;encryptedKey?:string;supportsImages?:boolean};
-function gatewayPath(){return path.join(app.getPath('userData'),'gateway.json')}
-async function getGateway():Promise<StoredGateway|null>{try{const data=JSON.parse(await fs.readFile(gatewayPath(),'utf8'));if(typeof data.baseUrl!=='string'||typeof data.modelId!=='string'||(data.encryptedKey!==undefined&&typeof data.encryptedKey!=='string')||(data.supportsImages!==undefined&&typeof data.supportsImages!=='boolean'))throw new Error('Invalid gateway data');return data}catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return null;throw error}}
-function publicGateway(value:StoredGateway):GatewayConfig{return {baseUrl:value.baseUrl,modelId:value.modelId,hasApiKey:!!value.encryptedKey,supportsImages:value.supportsImages===true}}
-async function saveGateway(input:{baseUrl:string;modelId:string;apiKey:string;supportsImages?:boolean}):Promise<GatewayConfig>{const valid=validateGateway(input);const old=await getGateway();let encryptedKey=old?.baseUrl===valid.baseUrl?old.encryptedKey:undefined;if(valid.apiKey){if(!safeStorage.isEncryptionAvailable())throw new Error('Secure storage unavailable');encryptedKey=safeStorage.encryptString(valid.apiKey).toString('base64')}const next:StoredGateway={baseUrl:valid.baseUrl,modelId:valid.modelId,supportsImages:valid.supportsImages===true,...(encryptedKey?{encryptedKey}:{})};await fs.mkdir(app.getPath('userData'),{recursive:true});const target=gatewayPath();await fs.writeFile(target+'.tmp',JSON.stringify(next),{mode:0o600});await fs.rename(target+'.tmp',target);return publicGateway(next)}
+/* 模型供应商存储在 register() 初始化(含旧 gateway.json 迁移);
+   gateway:get/set IPC 由 service 的兼容 shim 指向常驻 openai-compat 安装项 */
 let receiveAccountCallback:((url:string)=>Promise<void>)|undefined;
 let queuedAccountCallback:string|undefined;
 function dispatchAccountCallback(url:string){if(!url.startsWith("piwork://auth/callback?"))return;if(receiveAccountCallback)void receiveAccountCallback(url).catch(()=>{});else queuedAccountCallback=url}
 function register(window:BrowserWindow){
  let accountChanging=false;
  setAccountNotifier(()=>{if(!window.isDestroyed())window.webContents.send("account:changed")});
+ setModelProvidersNotifier(()=>{if(!window.isDestroyed())window.webContents.send("model-providers:changed")});
+ void loadModelProviders().catch(()=>{});
  let accountFailure:number|null=null;let accountBridge:Awaited<ReturnType<typeof startAccountBridge>>|null=null;let activeModelKey:string|null=null;let worker:Electron.UtilityProcess|null=null;let busy=false;let activeChatId:string|null=null;let activeSkillId:string|null=null;let activeMcpId:string|null=null;let pendingPicks=new Map<string,string>();
  const scheduledWorkers=new Map<string,Electron.UtilityProcess>();const activeSchedules=new Set<string>();let scheduling=false;let suspended=false;let recoverPending=true;let schedulerTimer:NodeJS.Timeout|undefined;
  const sessionDir=path.join(app.getPath('userData'),'sessions');
@@ -88,6 +91,8 @@ function register(window:BrowserWindow){
  const libraryDir=path.join(app.getPath('userData'),'library');
  // 对话附件的持久缓存副本(token/name):发送前与历史消息的预览都从副本读取,不依赖原文件位置
  const attachmentsDir=path.join(app.getPath('userData'),'attachments');
+ // Office 高保真预览(LibreOffice→PDF):转换结果缓存于 <userData>/preview-cache(electron/office-preview.ts)
+ const officePreview=createOfficePreview({cacheDir:path.join(app.getPath('userData'),'preview-cache'),isPackaged:app.isPackaged,appPath:app.getAppPath()});
  const attachmentCacheTarget=async(cache:string)=>{if(typeof cache!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/[^/\\]+$/.test(cache))throw new Error('Invalid attachment cache');return resolveInside(attachmentsDir,cache)};
  const syncJournal=new SyncJournal(path.join(app.getPath('userData'),'sync-journal.json'));
  const experimentalSync=process.env.PIWORK_DESKTOP_SYNC_EXPERIMENTAL!=='0';
@@ -158,10 +163,14 @@ function register(window:BrowserWindow){
   try{
    if(!claimed)await update(current=>({...current,scheduleRuns:[run,...(current.scheduleRuns??[])].slice(0,1000)}));
    const skill=schedule.skillId?(state.skills??[]).find(item=>item.id===schedule.skillId&&item.enabled):undefined;if(schedule.skillId&&!skill)throw new Error('skill_unavailable');if(skill)await fs.access(skill.filePath);const mcp=schedule.mcpId?(state.mcpServers??[]).find(item=>item.id===schedule.mcpId&&item.enabled):undefined;if(schedule.mcpId&&!mcp)throw new Error('mcp_unavailable');
-   const gateway=await getGateway();if(!gateway||gateway.baseUrl!==schedule.gatewayUrl||gateway.modelId!==schedule.modelId)throw new Error('gateway_changed');
+   // 定时任务按创建时固定的 baseUrl+modelId 解析供应商务工载荷;未命中沿用旧错误语义 gateway_changed
+   const model=await resolveScheduledModel(schedule.gatewayUrl,schedule.modelId);if(!model)throw new Error('gateway_changed');
    if(schedule.projectId&&!state.projects.some(p=>p.id===schedule.projectId))throw new Error('project_unavailable');
+   const scheduleRoots=schedule.projectId?(state.projects.find(project=>project.id===schedule.projectId)?.folders??[]).map(folder=>({root:folder.path,label:folder.label})):[];
+   // 定时任务无项目时同样使用会话输出目录(我的文档/AI 生成),agent 可产出文档并自检
+   let chatWorkspace:ProjectRoot|undefined;
+   if(!scheduleRoots.length){chatWorkspace=chatWorkspaceFor(workspaceFolderName(schedule.name,chatId));await fs.mkdir(chatWorkspace.root,{recursive:true,mode:0o700})}
    if(schedule.projectId){const project=state.projects.find(p=>p.id===schedule.projectId)!;const main=project.folders.find(folder=>folder.main)??project.folders[0];if(!main||!await fs.stat(main.path).then(s=>s.isDirectory()).catch(()=>false))throw new Error('project_unavailable')}
-   let key='';if(gateway.encryptedKey){if(!safeStorage.isEncryptionAvailable())throw new Error('credentials_unavailable');key=safeStorage.decryptString(Buffer.from(gateway.encryptedKey,'base64'))}
    run.chatId=chatId;
    await update(current=>({...current,scheduleRuns:(current.scheduleRuns??[]).map(r=>r.id===run.id?{...r,chatId}:r),chats:[{id:chatId,title:schedule.name,updatedAt:Date.now(),projectId:schedule.projectId,...(schedule.projectId?(()=>{const project=current.projects.find(item=>item.id===schedule.projectId);const folders=project?.folders??[];const main=folders.find(folder=>folder.main)??folders[0];return {projectPath:main?.path??null,projectFolders:folders.map(folder=>folder.path)}})():{projectPath:null})},...(current.chats??[])]}));
    await fs.mkdir(sessionDir,{recursive:true,mode:0o700});
@@ -169,9 +178,15 @@ function register(window:BrowserWindow){
    const currentChild=child;let settled=false;let deadline:NodeJS.Timeout|undefined;const runApprovals=new Set<string>();
    const finish=async(status:'completed'|'failed',detail?:string,exited=false)=>{if(settled)return;settled=true;if(deadline)clearTimeout(deadline);for(const id of runApprovals)denyApproval(id);runApprovals.clear();scheduledWorkers.delete(schedule.id);activeSchedules.delete(schedule.id);if(!exited)disposeWorker(currentChild);await update(current=>({...current,scheduleRuns:(current.scheduleRuns??[]).map(r=>r.id===run.id?{...r,status,finishedAt:Date.now(),...(detail?{detail}:{})}:r)})).catch(()=>{});if(!window.isDestroyed())window.webContents.send('schedules:changed')};
    deadline=setTimeout(()=>void finish('failed','timeout'),30*60*1000);
-   currentChild.on('message',(event:ChatEvent)=>{if(event.type==='completed')void finish('completed');else if(event.type==='failed'||event.type==='aborted')void finish('failed','agent_failed');else if(event.type==='approval'){runApprovals.add(event.id);void askApproval({...event,context:schedule.name},schedule.projectId??undefined).then(allowed=>{runApprovals.delete(event.id);if(!settled)currentChild.postMessage({type:'approval',id:event.id,allowed})})}});
+   currentChild.on('message',(event:ChatEvent|OfficeRenderRequest)=>{if(event.type==='completed')void finish('completed');else if(event.type==='failed'||event.type==='aborted')void finish('failed','agent_failed');else if(event.type==='approval'){runApprovals.add(event.id);void askApproval({...event,context:schedule.name},schedule.projectId??undefined).then(allowed=>{runApprovals.delete(event.id);if(!settled)currentChild.postMessage({type:'approval',id:event.id,allowed})})}
+    else if(event.type==='render:request'){void (async()=>{try{
+     if(!renderPathAllowed(event.inputPath,scheduleRoots,chatWorkspace))throw new Error('Render path is not available to this task');
+     const outcome=await officePreview.renderPages(event.inputPath,event.pages);
+     const reply:OfficeRenderResult={type:'render:result',id:event.id,outcome};if(!settled)currentChild.postMessage(reply)
+    }catch(error){const reply:OfficeRenderResult={type:'render:result',id:event.id,error:error instanceof Error&&error.message?error.message:'Render failed'};if(!settled)currentChild.postMessage(reply)}})();return}
+    else if(event.type==='tool'&&event.status==='completed'&&(event.name==='project_write'||event.name==='project_create_office'||event.name==='project_append_office')&&chatWorkspace&&typeof event.path==='string'){const relative=path.relative(libraryDir,event.path).split(path.sep).join('/');if(relative&&!relative.startsWith('..'))void registerAiFile(libraryDir,relative).catch(()=>{})}});
    currentChild.on('exit',()=>void finish('failed','agent_stopped',true));
-   currentChild.postMessage({type:'start',gateway:{baseUrl:gateway.baseUrl,modelId:gateway.modelId,apiKey:key,supportsImages:gateway.supportsImages===true},cwd:app.getPath('userData'),agentDir:piAgentDir(),sessionFile:sessionFile(chatId),...(skill?{skill:{name:skill.name,filePath:skill.filePath}}:{}),...(mcp?{mcp}:{}),...(schedule.projectId?{projectFolders:(state.projects.find(project=>project.id===schedule.projectId)?.folders??[]).map(folder=>({root:folder.path,label:folder.label}))}:{}),text:schedule.prompt,permission:state.preferences.permission??'confirm'});
+   currentChild.postMessage({type:'start',model,cwd:app.getPath('userData'),agentDir:piAgentDir(),sessionFile:sessionFile(chatId),...(skill?{skill:{name:skill.name,filePath:skill.filePath}}:{}),...(mcp?{mcp}:{}),...(scheduleRoots.length?{projectFolders:scheduleRoots}:{}),...(chatWorkspace?{chatWorkspace}:{}),text:schedule.prompt,permission:state.preferences.permission??'confirm'});
   }catch(error){if(child)disposeWorker(child);scheduledWorkers.delete(schedule.id);activeSchedules.delete(schedule.id);const detail=error instanceof Error&&['gateway_changed','project_unavailable','credentials_unavailable','skill_unavailable','mcp_unavailable'].includes(error.message)?error.message:'start_failed';await update(current=>({...current,scheduleRuns:[{...run,status:'failed' as const,finishedAt:Date.now(),detail},...(current.scheduleRuns??[]).filter(r=>r.id!==run.id)].slice(0,1000)}));if(!window.isDestroyed())window.webContents.send('schedules:changed')}
  }
  async function tickSchedules(){
@@ -212,9 +227,9 @@ function register(window:BrowserWindow){
  handle('skills:remove',async(id:string)=>{if(!isChatId(id)||!(state.skills??[]).some(skill=>skill.id===id))throw new Error('Invalid skill');const target=(state.skills??[]).find(skill=>skill.id===id);await update(current=>({...current,skills:(current.skills??[]).filter(skill=>skill.id!==id),...(target?.source==='agents'?{dismissedSkills:[...(current.dismissedSkills??[]),target.filePath]}:{})}))});
  handle('schedules:list',()=>({schedules:state.schedules??[],runs:state.scheduleRuns??[]}));
  // schedules:create IPC 与前台 Agent 的 create_scheduled_task 工具共用同一落库逻辑
- async function createScheduleRecord(input:ScheduleInput):Promise<void>{const value=validateSchedule(input);if(value.projectId&&!state.projects.some(p=>p.id===value.projectId))throw new Error('Project not found');if(value.skillId&&!(state.skills??[]).some(skill=>skill.id===value.skillId&&skill.enabled))throw new Error('Skill not found');if(value.mcpId&&!(state.mcpServers??[]).some(server=>server.id===value.mcpId&&server.enabled))throw new Error('MCP not found');const gateway=await getGateway();if(!gateway)throw new Error('Gateway not configured');const item:Schedule={...value,id:randomUUID(),enabled:true,nextAt:nextSchedule(value.cron,value.timezone,Date.now()),gatewayUrl:gateway.baseUrl,modelId:gateway.modelId};await update(current=>({...current,schedules:[...(current.schedules??[]),item]}));}
+ async function createScheduleRecord(input:ScheduleInput):Promise<void>{const value=validateSchedule(input);if(value.projectId&&!state.projects.some(p=>p.id===value.projectId))throw new Error('Project not found');if(value.skillId&&!(state.skills??[]).some(skill=>skill.id===value.skillId&&skill.enabled))throw new Error('Skill not found');if(value.mcpId&&!(state.mcpServers??[]).some(server=>server.id===value.mcpId&&server.enabled))throw new Error('MCP not found');const target=await defaultCustomModel();if(!target)throw new Error('Gateway not configured');const item:Schedule={...value,id:randomUUID(),enabled:true,nextAt:nextSchedule(value.cron,value.timezone,Date.now()),gatewayUrl:target.baseUrl,modelId:target.modelId};await update(current=>({...current,schedules:[...(current.schedules??[]),item]}));}
  handle('schedules:create',(input:ScheduleInput)=>createScheduleRecord(input));
- handle('schedules:update',async(id:string,input:ScheduleInput)=>{if(!isChatId(id)||!(state.schedules??[]).some(s=>s.id===id)||activeSchedules.has(id))throw new Error('Schedule unavailable');const value=validateSchedule(input);if(value.projectId&&!state.projects.some(p=>p.id===value.projectId))throw new Error('Project not found');if(value.skillId&&!(state.skills??[]).some(skill=>skill.id===value.skillId&&skill.enabled))throw new Error('Skill not found');if(value.mcpId&&!(state.mcpServers??[]).some(server=>server.id===value.mcpId&&server.enabled))throw new Error('MCP not found');const gateway=await getGateway();if(!gateway)throw new Error('Gateway not configured');await update(current=>({...current,schedules:(current.schedules??[]).map(s=>s.id===id?{...s,...value,nextAt:nextSchedule(value.cron,value.timezone,Date.now()),gatewayUrl:gateway.baseUrl,modelId:gateway.modelId}:s)}))});
+ handle('schedules:update',async(id:string,input:ScheduleInput)=>{if(!isChatId(id)||!(state.schedules??[]).some(s=>s.id===id)||activeSchedules.has(id))throw new Error('Schedule unavailable');const value=validateSchedule(input);if(value.projectId&&!state.projects.some(p=>p.id===value.projectId))throw new Error('Project not found');if(value.skillId&&!(state.skills??[]).some(skill=>skill.id===value.skillId&&skill.enabled))throw new Error('Skill not found');if(value.mcpId&&!(state.mcpServers??[]).some(server=>server.id===value.mcpId&&server.enabled))throw new Error('MCP not found');const target=await defaultCustomModel();if(!target)throw new Error('Gateway not configured');await update(current=>({...current,schedules:(current.schedules??[]).map(s=>s.id===id?{...s,...value,nextAt:nextSchedule(value.cron,value.timezone,Date.now()),gatewayUrl:target.baseUrl,modelId:target.modelId}:s)}))});
  handle('schedules:toggle',async(id:string,enabled:boolean)=>{if(!isChatId(id)||typeof enabled!=='boolean'||!(state.schedules??[]).some(s=>s.id===id))throw new Error('Invalid schedule');await update(current=>({...current,schedules:(current.schedules??[]).map(s=>s.id===id?{...s,enabled,...(enabled?{nextAt:nextSchedule(s.cron,s.timezone,Date.now())}:{})}:s)}))});
  // 与 web 语义对齐:删除任务级联删除运行记录(已生成的结果对话保留)
  handle('schedules:delete',async(id:string)=>{if(!isChatId(id)||!(state.schedules??[]).some(s=>s.id===id))throw new Error('Invalid schedule');await update(current=>({...current,schedules:(current.schedules??[]).filter(s=>s.id!==id),scheduleRuns:(current.scheduleRuns??[]).filter(r=>r.scheduleId!==id)}))});
@@ -321,12 +336,11 @@ function register(window:BrowserWindow){
   return cacheGeneratedDocument(target,messages,attachmentsDir);
  });
  handle('chat:readAttachment',async(cache:string)=>{
-  await attachmentCacheTarget(cache);
+  const target=await attachmentCacheTarget(cache);
   const name=path.basename(cache);
   if(/\.pdf$/i.test(name))return {name,kind:'pdf' as const,content:await readProjectPdf(attachmentsDir,cache)};
-  if(/\.docx$/i.test(name))return {name,kind:'docx' as const,content:await readProjectDocx(attachmentsDir,cache)};
-  if(/\.xlsx$/i.test(name))return {name,kind:'xlsx' as const,content:await readProjectXlsx(attachmentsDir,cache)};
-  if(/\.pptx$/i.test(name))return {name,kind:'pptx' as const,content:await readProjectPptx(attachmentsDir,cache)};
+  // office 三件套走高保真 LibreOffice→PDF(缓存命中/转换,失败回落原始字节),missingFonts 供灰色提示
+  if(/\.(docx|xlsx|pptx)$/i.test(name)){const preview=await officePreview.readDocumentPreview(target);return {name,kind:preview.kind,content:preview.content,missingFonts:preview.missingFonts}}
   if(/\.(png|jpe?g|gif|webp)$/i.test(name))return {name,kind:'image' as const,content:await readProjectImage(attachmentsDir,cache).then(image=>`data:${image.mime};base64,${image.base64}`)};
   if(/\.html?$/i.test(name))return {name,kind:'html' as const,content:await readProjectText(attachmentsDir,cache)};
   try{return {name,kind:'text' as const,content:await readProjectText(attachmentsDir,cache)}}catch{return {name,kind:'unsupported' as const,content:''}}
@@ -336,11 +350,22 @@ function register(window:BrowserWindow){
  handle('chat:send',async(text:string,projectId:string|null,skillId:string|null,mcpId:string|null,attachments:(string|{token:string})[],selection?:{source:'account'|'custom';id:string})=>{
   if(typeof text!=='string'||!text.trim()||text.length>100000)throw new Error('Invalid message');if(!Array.isArray(attachments)||attachments.length>10)throw new Error('Invalid attachment');if(syncWorking||syncPreparing)throw new Error('Sync busy');if(busy||pickingAttachment||accountChanging)throw new Error('Session busy');
   busy=true;
-  try {if(skillId!==null&&typeof skillId!=='string')throw new Error('Invalid skill');const skill=skillId?(state.skills??[]).find(item=>item.id===skillId&&item.enabled):undefined;if(skillId&&!skill)throw new Error('Skill not enabled');if(skill)await fs.access(skill.filePath);if(mcpId!==null&&typeof mcpId!=='string')throw new Error('Invalid MCP');const mcp=mcpId?(state.mcpServers??[]).find(item=>item.id===mcpId&&item.enabled):undefined;if(mcpId&&!mcp)throw new Error('MCP not enabled');if(worker&&(activeSkillId!==skillId||activeMcpId!==mcpId))stopWorker();busy=true;const activeChat=activeChatId?(state.chats??[]).find(chat=>chat.id===activeChatId):undefined;if(activeChatId&&!activeChat)throw new Error('Chat not found');const selectedProject=validateChatProject(projectId,state.projects,activeChat);const source=selection?.source??'custom';if(!['custom','account'].includes(source))throw new Error('Invalid model source');let gateway:StoredGateway;let binding:NonNullable<ChatSummary['modelBinding']>;let supportsImages=false;
-  if(source==='account'){const account=await accountStatus();const model=account.models.find(item=>item.id===selection?.id);if(!account.baseUrl||!account.user||!model)throw new Error('Account model unavailable');binding={source,id:model.id,baseUrl:account.baseUrl,userId:account.user.id};supportsImages=model.supportsImages===true;gateway={baseUrl:account.baseUrl,modelId:model.id};}else{const custom=await getGateway();if(!custom||selection&&selection.id!==custom.modelId)throw new Error('Gateway not configured');gateway=custom;binding={source,id:custom.modelId,baseUrl:custom.baseUrl};supportsImages=custom.supportsImages===true}
+  try {if(skillId!==null&&typeof skillId!=='string')throw new Error('Invalid skill');const skill=skillId?(state.skills??[]).find(item=>item.id===skillId&&item.enabled):undefined;if(skillId&&!skill)throw new Error('Skill not enabled');if(skill)await fs.access(skill.filePath);if(mcpId!==null&&typeof mcpId!=='string')throw new Error('Invalid MCP');const mcp=mcpId?(state.mcpServers??[]).find(item=>item.id===mcpId&&item.enabled):undefined;if(mcpId&&!mcp)throw new Error('MCP not enabled');if(worker&&(activeSkillId!==skillId||activeMcpId!==mcpId))stopWorker();busy=true;const activeChat=activeChatId?(state.chats??[]).find(chat=>chat.id===activeChatId):undefined;if(activeChatId&&!activeChat)throw new Error('Chat not found');const selectedProject=validateChatProject(projectId,state.projects,activeChat);const source=selection?.source??'custom';if(!['custom','account'].includes(source))throw new Error('Invalid model source');let workerModel:WorkerModelInput;let binding:NonNullable<ChatSummary['modelBinding']>;let supportsImages=false;let accountBinding:{baseUrl:string;modelId:string}|null=null;
+  /* 自定义来源:selection.id 为 '<providerKey>/<modelId>'(旧格式无 / 按 openai-compat 兼容);
+     binding 沿用 {id:原始 modelId, baseUrl},旧会话的 modelBinding 可直接比对 */
+  if(source==='account'){const account=await accountStatus();const model=account.models.find(item=>item.id===selection?.id);if(!account.baseUrl||!account.user||!model)throw new Error('Account model unavailable');binding={source,id:model.id,baseUrl:account.baseUrl,userId:account.user.id};supportsImages=model.supportsImages===true;accountBinding={baseUrl:account.baseUrl,modelId:model.id};workerModel={providerId:'piwork-account',name:'PiWork',baseUrl:account.baseUrl,apiKey:'',api:'pi-messages',modelId:model.id,models:[{id:model.id,name:model.name??model.id,reasoning:false,input:supportsImages?['text','image']:['text'],contextWindow:128000,maxTokens:8192}]};}else{workerModel=await resolveCustomModel(selection?.id??'');binding={source,id:workerModel.modelId,baseUrl:workerModel.baseUrl};supportsImages=workerModel.models.some(model=>model.id===workerModel.modelId&&model.input.includes('image'));}
   if(activeChat?.modelBinding&&JSON.stringify(activeChat.modelBinding)!==JSON.stringify(binding))throw new Error('Chat model changed');const modelKey=JSON.stringify(binding);if(worker&&activeModelKey!==modelKey)stopWorker();busy=true;
   const project=selectedProject?state.projects.find(item=>item.id===selectedProject):undefined;
   const roots=project?projectRoots(project.id):[];
+  // 无项目会话:产出走聊天专属输出目录(我的文档/AI 生成/<标题>-<id前缀>),写入/office_render/库登记都以此为界;
+  // 文件夹名固定在首条消息(workspaceFolder),后续轮次与 worker 重启沿用
+  const chatId=activeChatId??randomUUID();
+  let chatWorkspace:ProjectRoot|undefined;
+  if(!roots.length){
+   const folder=activeChat?.workspaceFolder??workspaceFolderName(activeChat?.title??text.trim().slice(0,80),chatId);
+   chatWorkspace=chatWorkspaceFor(folder);
+   await fs.mkdir(chatWorkspace.root,{recursive:true,mode:0o700});
+  }
   let promptText=text;
   let images:import('@earendil-works/pi-ai').ImageContent[]|undefined;
   // 多附件:项目文件(string)逐个追加 PROJECT marker;token 逐个映射 pickedAttachments 并追加 PICKED marker,图片汇入 images
@@ -361,12 +386,19 @@ function register(window:BrowserWindow){
     promptText=addPickedAttachment(promptText,entry.info.name,entry.data,entry.info.cache);
    }
   }
-  let key='';if(gateway.encryptedKey){if(!safeStorage.isEncryptionAvailable())throw new Error('Secure storage unavailable');key=safeStorage.decryptString(Buffer.from(gateway.encryptedKey,'base64'))}
-  if(!activeChatId){const id=randomUUID();await update(current=>({...current,chats:[{id,title:text.trim().slice(0,80),updatedAt:Date.now(),projectId:selectedProject,projectPath:roots[0]?.root??null,...(roots.length?{projectFolders:roots.map(item=>item.root)}:{}) ,modelBinding:binding},...(current.chats??[])]}));activeChatId=id}
+  if(!activeChatId){await update(current=>({...current,chats:[{id:chatId,title:text.trim().slice(0,80),updatedAt:Date.now(),projectId:selectedProject,projectPath:roots[0]?.root??null,...(roots.length?{projectFolders:roots.map(item=>item.root)}:{}),...(chatWorkspace?{workspaceFolder:path.basename(chatWorkspace.root)}:{}),modelBinding:binding},...(current.chats??[])]}));activeChatId=chatId}
   await fs.mkdir(sessionDir,{recursive:true,mode:0o700});
   if(experimentalSync&&state.preferences.syncEnabled){syncPreparing=true;try{const account=await currentSyncAccount();const existing=(await syncJournal.list(account)).find(item=>item.chatId===activeChatId);if(!existing&&activeChat&&await fs.access(sessionFile(activeChatId)).then(()=>true).catch(()=>false))throw new Error('Sync only supports new chats');await prepareSyncRun({journal:syncJournal,account,chatId:activeChatId,title:activeChat?.title??text.trim().slice(0,80),text,transport:accountSyncTransport(account),isBusy:()=>false,appendRemote:items=>appendRemote(activeChatId!,items)});foregroundSync=account;busy=true;syncState='syncing';notifySync()}catch(error){if(error instanceof Error&&error.message==='Sync only supports new chats')throw error;const conflict=error instanceof Error&&error.message==='Sync conflict';const running=error instanceof Error&&error.message==='Sync task running';syncState=running?'pending':conflict?'conflict':'unavailable';notifySync();throw new Error(running?'Sync task running':conflict?'Sync conflict':'Sync unavailable')}finally{syncPreparing=false;busy=true;flushSyncHistory()}}
-  if(source==='account'){if(!accountBridge)accountBridge=await startAccountBridge(binding.baseUrl,binding.id,status=>{accountFailure=status});accountFailure=null;accountBridge.newRun();gateway={baseUrl:accountBridge.baseUrl,modelId:binding.id};key=accountBridge.apiKey}activeModelKey=modelKey;
-  if(!worker){const child=utilityProcess.fork(path.join(dirname,'chat-worker.js'),[],{stdio:'ignore'});worker=child;activeSkillId=skillId;activeMcpId=mcpId;child.on('message',async(event:ChatEvent|ChatChunkMessage|ScheduleCreateRequest|QuestionRequest)=>{if(worker!==child)return;lastWorkerActivity=Date.now();abortRequested=false;if(event.type==='tool'){if(event.status==='running')runningToolIds.add(event.id);else runningToolIds.delete(event.id)}if(event.type==='question'){void askQuestions(event).then(response=>{if(worker===child)child.postMessage({type:'question:response',id:event.id,response})});return}if(event.type==='schedule:create'){try{await createScheduleRecord({name:event.input.taskType,prompt:event.input.prompt,cron:event.input.cron,timezone:event.input.timezone,projectId:null,skillId:null,mcpId:null});child.postMessage({type:'schedule:result',id:event.id,ok:true})}catch(error){child.postMessage({type:'schedule:result',id:event.id,ok:false,error:error instanceof Error?error.message:'Schedule create failed'})}return}if(event.type==='chunk'){if(!window.isDestroyed())window.webContents.send('chat:chunk',event);return}if(event.type==='approval'){foregroundApprovalIds.add(event.id);const chatProject=(state.chats??[]).find(chat=>chat.id===activeChatId)?.projectId??undefined;void askApproval(event,chatProject).then(allowed=>{foregroundApprovalIds.delete(event.id);if(worker===child)child.postMessage({type:'approval',id:event.id,allowed})});return}if(event.type==='completed'||event.type==='failed'||event.type==='aborted'){cancelQuestions();denyForegroundApprovals();await finishForegroundSync(event.type==='completed'?'completed':event.type==='aborted'?'aborted':'failed',event.type==='completed'?event.text:undefined);busy=false;setImmediate(()=>void synchronize());const id=activeChatId;if(id)await update(current=>({...current,chats:(current.chats??[]).map(chat=>chat.id===id?{...chat,updatedAt:Date.now()}:chat)})).catch(()=>{});if(worker!==child)return}emit(event.type==='failed'&&accountFailure?{type:'failed',message:`account:${accountFailure}`} : event)});child.on('exit',async()=>{if(worker!==child)return;worker=null;denyApprovals();cancelQuestions();if(busy){await finishForegroundSync('failed');busy=false;setImmediate(()=>void synchronize());emit({type:'failed',message:'Agent process stopped'})}});child.postMessage({type:'start',gateway:{baseUrl:gateway.baseUrl,modelId:gateway.modelId,apiKey:key,supportsImages,...(source==='account'?{api:'pi-messages'}:{})},cwd:app.getPath('userData'),agentDir:piAgentDir(),sessionFile:sessionFile(activeChatId),...(roots.length?{projectFolders:roots}:{}),...(mcp?{mcp}:{}),...(skill?{skill:{name:skill.name,filePath:skill.filePath}}:{}),text:promptText,images,allowScheduleTools:true,allowUserQuestions:true,permission:state.preferences.permission??'confirm'})}
+  if(source==='account'){if(!accountBridge)accountBridge=await startAccountBridge(binding.baseUrl,binding.id,status=>{accountFailure=status});accountFailure=null;accountBridge.newRun();workerModel={providerId:'piwork-account',name:'PiWork',baseUrl:accountBridge.baseUrl,apiKey:accountBridge.apiKey,api:'pi-messages',modelId:accountBinding!.modelId,models:[{id:accountBinding!.modelId,name:accountBinding!.modelId,reasoning:false,input:supportsImages?['text','image']:['text'],contextWindow:128000,maxTokens:8192}]}}activeModelKey=modelKey;
+  if(!worker){const child=utilityProcess.fork(path.join(dirname,'chat-worker.js'),[],{stdio:'ignore'});worker=child;activeSkillId=skillId;activeMcpId=mcpId;child.on('message',async(event:ChatEvent|ChatChunkMessage|ScheduleCreateRequest|QuestionRequest|OfficeRenderRequest)=>{if(worker!==child)return;lastWorkerActivity=Date.now();abortRequested=false;if(event.type==='tool'){if(event.status==='running')runningToolIds.add(event.id);else runningToolIds.delete(event.id);
+   /* 无项目会话的落盘产物登记进文档库(我的文档 → AI 生成);event.path 为 chat-session 解析出的绝对路径 */
+   if(event.status==='completed'&&(event.name==='project_write'||event.name==='project_create_office'||event.name==='project_append_office')&&chatWorkspace&&typeof event.path==='string'){const relative=path.relative(libraryDir,event.path).split(path.sep).join('/');if(relative&&!relative.startsWith('..'))void registerAiFile(libraryDir,relative).catch(()=>{})}}
+  if(event.type==='render:request'){void (async()=>{try{
+   if(!renderPathAllowed(event.inputPath,roots,chatWorkspace))throw new Error('Render path is not available to this chat');
+   const outcome=await officePreview.renderPages(event.inputPath,event.pages);
+   const reply:OfficeRenderResult={type:'render:result',id:event.id,outcome};if(worker===child)child.postMessage(reply)
+  }catch(error){const reply:OfficeRenderResult={type:'render:result',id:event.id,error:error instanceof Error&&error.message?error.message:'Render failed'};if(worker===child)child.postMessage(reply)}})();return}
+  if(event.type==='question'){void askQuestions(event).then(response=>{if(worker===child)child.postMessage({type:'question:response',id:event.id,response})});return}if(event.type==='schedule:create'){try{await createScheduleRecord({name:event.input.taskType,prompt:event.input.prompt,cron:event.input.cron,timezone:event.input.timezone,projectId:null,skillId:null,mcpId:null});child.postMessage({type:'schedule:result',id:event.id,ok:true})}catch(error){child.postMessage({type:'schedule:result',id:event.id,ok:false,error:error instanceof Error?error.message:'Schedule create failed'})}return}if(event.type==='chunk'){if(!window.isDestroyed())window.webContents.send('chat:chunk',event);return}if(event.type==='approval'){foregroundApprovalIds.add(event.id);const chatProject=(state.chats??[]).find(chat=>chat.id===activeChatId)?.projectId??undefined;void askApproval(event,chatProject).then(allowed=>{foregroundApprovalIds.delete(event.id);if(worker===child)child.postMessage({type:'approval',id:event.id,allowed})});return}if(event.type==='completed'||event.type==='failed'||event.type==='aborted'){cancelQuestions();denyForegroundApprovals();await finishForegroundSync(event.type==='completed'?'completed':event.type==='aborted'?'aborted':'failed',event.type==='completed'?event.text:undefined);busy=false;setImmediate(()=>void synchronize());const id=activeChatId;if(id)await update(current=>({...current,chats:(current.chats??[]).map(chat=>chat.id===id?{...chat,updatedAt:Date.now()}:chat)})).catch(()=>{});if(worker!==child)return}emit(event.type==='failed'&&accountFailure?{type:'failed',message:`account:${accountFailure}`} : event)});child.on('exit',async()=>{if(worker!==child)return;worker=null;denyApprovals();cancelQuestions();if(busy){await finishForegroundSync('failed');busy=false;setImmediate(()=>void synchronize());emit({type:'failed',message:'Agent process stopped'})}});child.postMessage({type:'start',model:workerModel,cwd:app.getPath('userData'),agentDir:piAgentDir(),sessionFile:sessionFile(activeChatId),...(roots.length?{projectFolders:roots}:{}),...(chatWorkspace?{chatWorkspace}:{}),...(mcp?{mcp}:{}),...(skill?{skill:{name:skill.name,filePath:skill.filePath}}:{}),text:promptText,images,allowScheduleTools:true,allowUserQuestions:true,permission:state.preferences.permission??'confirm'})}
   else worker.postMessage({type:'prompt',text:promptText,images,...(skill?{skillName:skill.name}:{})});
   if(usedTokens.size)pickedAttachments=pickedAttachments.filter(entry=>!usedTokens.has(entry.info.token));
   return activeChatId;
@@ -376,6 +408,23 @@ function register(window:BrowserWindow){
  handle('chat:clear',()=>{if(syncWorking||syncPreparing||foregroundSync&&busy)throw new Error('Sync run active');resetChat()});
  handle('chat:list',()=>[...(state.chats??[])].sort((a,b)=>b.updatedAt-a.updatedAt));
  handle('chat:open',async(id:string)=>{if(!isChatId(id)||!(state.chats??[]).some(chat=>chat.id===id))throw new Error('Chat not found');if(busy||syncWorking||syncPreparing)throw new Error('Chat busy');const file=sessionFile(id);await fs.access(file);const manager=SessionManager.open(file,sessionDir,app.getPath('userData'));const context=manager.buildSessionContext();const timings=new Map<number,{startedAt:number;durationMs:number}>();for(const entry of manager.getBranch()){if(entry.type==='custom'&&entry.customType==='piwork:turn-timing'){const data=entry.data as {userTimestamp?:number;startedAt?:number;durationMs?:number}|undefined;if(data&&typeof data.userTimestamp==='number'&&typeof data.startedAt==='number'&&typeof data.durationMs==='number')timings.set(data.userTimestamp,{startedAt:data.startedAt,durationMs:data.durationMs})}}const messages=projectChatHistory(context.messages,timings);stopWorker();if(activeChatId!==id)pickedAttachments=[];activeChatId=id;return {messages,toolEvents:messages.flatMap(message=>message.toolEvents??[]),projectId:(state.chats??[]).find(chat=>chat.id===id)?.projectId??null,modelBinding:(state.chats??[]).find(chat=>chat.id===id)?.modelBinding}});
+ // 编辑用户消息:把会话 leaf 移到该条目的父节点(pi 追加树 branch/resetLeaf,文件不改写),
+ // 截断其后全部条目;渲染端随后走 chat:send 以新文本重生成(worker 已停,重新 fork 从新 leaf 打开)
+ handle('chat:edit',async(id:string,userIndex:number)=>{
+  if(!isChatId(id)||!(state.chats??[]).some(chat=>chat.id===id))throw new Error('Chat not found');
+  if(busy||syncWorking||syncPreparing)throw new Error('Chat busy');
+  if(await syncJournal.hasChat(id))throw new Error('Synced chat edit unavailable');
+  if(!Number.isInteger(userIndex)||userIndex<0)throw new Error('Invalid message');
+  const file=sessionFile(id);await fs.access(file);
+  stopWorker();
+  const manager=SessionManager.open(file,sessionDir,app.getPath('userData'));
+  const target=locateUserEntry(manager.getBranch(),userIndex);
+  if(!target)throw new Error('Message not found');
+  if(target.parentId)manager.branch(target.parentId);else manager.resetLeaf();
+  /* branch()/resetLeaf() 只移动内存 leaf,不追加就不会落盘:补一条不进模型上下文的
+     marker 条目提交新分支,worker 重开文件时 leaf 恰好落在截断处(pi leaf=文件最后一条) */
+  manager.appendCustomEntry('piwork:edit-truncate',{userIndex});
+ });
  handle('chat:rename',async(id:string,title:string)=>{await update(current=>({...current,chats:renameChat(current.chats??[],id,title)}))});
  handle('chat:delete',async(id:string)=>{
   if(!isChatId(id)||!(state.chats??[]).some(chat=>chat.id===id))throw new Error('Chat not found');
@@ -403,8 +452,18 @@ function register(window:BrowserWindow){
  handle('account:status',()=>accountStatus());
  handle('account:login',async(baseUrl:string)=>{if(accountChanging)throw new Error('Session busy');accountChanging=true;try{await canChangeAccount();await openAccountLogin(baseUrl)}finally{accountChanging=false}});
  handle('account:logout',async()=>{if(accountChanging)throw new Error('Session busy');accountChanging=true;try{await canChangeAccount();await logoutAccount();stopWorker();if(!window.isDestroyed())window.webContents.send('account:changed')}finally{accountChanging=false}});
- handle('gateway:get',async()=>{const value=await getGateway();return value?publicGateway(value):null});
- handle('gateway:set',async(input)=>{if(busy||pickingAttachment||accountChanging)throw new Error('Session busy');const result=await saveGateway(input);stopWorker();return result});
+ handle('gateway:get',()=>legacyGatewayGet());
+ handle('gateway:set',async(input)=>{if(busy||pickingAttachment||accountChanging)throw new Error('Session busy');const result=await legacyGatewaySet(input);stopWorker();return result});
+ /* 模型供应商管理:变更影响 worker 配置的操作沿用 gateway:set 的 busy 守卫并重启 worker;
+    失败时记录主进程日志(IPC 错误到渲染层只剩 message,现场丢失) */
+ const providersBusy=()=>{if(busy||pickingAttachment||accountChanging)throw new Error('Session busy')};
+ const logged=(name:string,fn:(...args:any[])=>unknown)=>(...args:any[])=>Promise.resolve().then(()=>fn(...args)).catch(error=>{console.error(`[model-providers] ${name} failed:`,error);throw error});
+ handle('model-providers:get',()=>modelProvidersView());
+ handle('model-providers:install',logged('install',async(packageId:string)=>{providersBusy();if(typeof packageId!=='string')throw new Error('Invalid package');const view=await installFromCatalog(packageId);stopWorker();return view}));
+ handle('model-providers:upload',logged('upload',async()=>{providersBusy();const picked=await dialog.showOpenDialog(window,{properties:['openFile'],filters:[{name:'PiWork model provider package',extensions:['zip']}]});const file=picked.canceled?undefined:picked.filePaths[0];if(!file)throw new Error('Canceled');const buffer=await fs.readFile(file);const view=await installFromBuffer(path.basename(file),buffer);stopWorker();return view}));
+ handle('model-providers:update',logged('update',async(id:string,patch)=>{providersBusy();if(!isChatId(id))throw new Error('Provider unavailable');const view=await updateInstallation(id,patch);stopWorker();return view}));
+ handle('model-providers:remove',logged('remove',async(id:string)=>{providersBusy();if(!isChatId(id))throw new Error('Provider unavailable');const view=await removeInstallation(id);stopWorker();return view}));
+ handle('model-providers:set-default',logged('set-default',async(value)=>{if(value!==null&&(!value||typeof value.providerKey!=='string'||typeof value.modelId!=='string'))throw new Error('Invalid default model');return await setDefaultModelValue(value)}));
  handle('preferences:get',()=>state.preferences);
  handle('app:version',()=>app.getVersion());
  // 客户端自动更新:快照/检查/下载/取消/打开安装包;状态变化经 app-update:changed 通知渲染层(仿 sync:changed)
@@ -417,7 +476,7 @@ function register(window:BrowserWindow){
  handle('sync:status',()=>({state:experimentalSync&&state.preferences.syncEnabled?syncState:'off'}));
  handle('sync:now',async()=>{await synchronize();return {state:experimentalSync&&state.preferences.syncEnabled?syncState:'off'}});
  handle('sync:recover',async()=>{if(!experimentalSync||!state.preferences.syncEnabled||busy||syncWorking||syncPreparing||syncState!=='interrupted')throw new Error('Recovery unavailable');const account=await currentSyncAccount();const answer=await dialog.showMessageBox(window,{type:'warning',buttons:['取消 / Cancel','确认已停止 / Confirm stopped'],defaultId:0,cancelId:0,noLink:true,title:'PiWork · 中断任务 / Interrupted task',message:'请先确认之前的 PiWork 任务及其启动的本机进程均已停止。确认后将保留已记录的输入并释放同步锁，不会重跑任务。\nFirst verify that the previous PiWork task and processes it started have stopped. Confirmation keeps the recorded input and releases the sync lock without rerunning the task.',detail:'未完成的回复仍保留在本地，不会自动上传。\nAn unfinished reply stays local and is not uploaded automatically.'});if(answer.response!==1)return;if(busy||syncWorking||syncPreparing||syncState!=='interrupted')throw new Error('Recovery unavailable');const current=await currentSyncAccount();if(current.baseUrl!==account.baseUrl||current.userId!==account.userId)throw new Error('Sync account changed');await syncJournal.markInterruptedConfirmed(account,true);syncState='pending';notifySync();setImmediate(()=>void synchronize())});
- handle('preferences:set',async(p:Preferences)=>{if(!validPreferences(p))throw new Error('Invalid preferences');const enabled=p.syncEnabled??state.preferences.syncEnabled??false;if(enabled&&!experimentalSync&&!state.preferences.syncEnabled)throw new Error('Sync unavailable');if(enabled!==!!state.preferences.syncEnabled){if(busy||syncWorking||syncPreparing)throw new Error('Session busy');if(enabled){const account=await currentSyncAccount();if(!await accountSyncAvailable(account))throw new Error('Sync unavailable')}else if(await syncJournal.hasUnresolved())throw new Error('Sync pending')}const permission=p.permission??'confirm';await update(current=>({...current,preferences:{appearance:p.appearance,language:p.language,syncEnabled:enabled,permission}}));/* 权限模式变化即时下发活跃对话与定时任务 worker,对话进行中切换立即生效 */if(permission!==(state.preferences.permission??'confirm')){worker?.postMessage({type:'permission',mode:permission});for(const child of scheduledWorkers.values())child.postMessage({type:'permission',mode:permission})}notifySync();if(enabled)setImmediate(()=>void synchronize());return state.preferences});
+ handle('preferences:set',async(p:Preferences)=>{if(!validPreferences(p))throw new Error('Invalid preferences');const enabled=p.syncEnabled??state.preferences.syncEnabled??false;if(enabled&&!experimentalSync&&!state.preferences.syncEnabled)throw new Error('Sync unavailable');if(enabled!==!!state.preferences.syncEnabled){if(busy||syncWorking||syncPreparing)throw new Error('Session busy');if(enabled){const account=await currentSyncAccount();if(!await accountSyncAvailable(account))throw new Error('Sync unavailable')}else if(await syncJournal.hasUnresolved())throw new Error('Sync pending')}const permission=p.permission??'confirm';await update(current=>({...current,preferences:{appearance:p.appearance,language:p.language,syncEnabled:enabled,permission,...(p.modelSource?{modelSource:p.modelSource}:{})}}));/* 权限模式变化即时下发活跃对话与定时任务 worker,对话进行中切换立即生效 */if(permission!==(state.preferences.permission??'confirm')){worker?.postMessage({type:'permission',mode:permission});for(const child of scheduledWorkers.values())child.postMessage({type:'permission',mode:permission})}notifySync();if(enabled)setImmediate(()=>void synchronize());return state.preferences});
  handle('projects:list',async()=>Promise.all(state.projects.map(async p=>{
   const folders=await Promise.all(p.folders.map(async f=>({...f,available:await fs.stat(f.path).then(s=>s.isDirectory()).catch(()=>false)})));
   return {...p,folders,available:folders.find(f=>f.main)?.available??folders[0]?.available??false};
@@ -481,6 +540,26 @@ function register(window:BrowserWindow){
   }
   return p.folders.map(folder=>({root:folder.path,label:folder.label}));
  };
+ /** 无项目会话的输出文件夹名:聊天标题清洗 + chatId 前缀(库内唯一、合法文件名;标题改名不影响已存文件夹)。
+     标题里的 Markdown 符号(*`[]#)、成对括号与引号一并剔除——它们进入文件夹名后会成为绝对路径的一
+     部分,模型回显路径时按裸文本匹配会被这些字符截断,且目录名不可读 */
+ const workspaceFolderName=(title:string,chatId:string):string=>{
+  const cleaned=title.replace(/[\\/\0]/g,' ').replace(/[\x00-\x1f\u007f]/g,'').replace(/[*`[\]{}<>#|"'（）()【】]/g,' ').replace(/\s+/g,' ').replace(/^\.+/,'').trim().replace(/[.\s]+$/,'').slice(0,40).trimEnd();
+  return `${cleaned||'文档'}-${chatId.slice(0,6)}`;
+ };
+ /** 无项目会话的聊天专属输出目录(我的文档/AI 生成/<文件夹>);写入/渲染/库注册都以此为界 */
+ const chatWorkspaceFor=(folder:string):ProjectRoot=>{
+  const workspace={root:path.join(libraryDir,'AI 生成',folder),label:'AI 生成'};
+  return workspace;
+ };
+ /** office_render 的路径闸门:仅允许渲染本项目源文件夹或会话输出目录内的文件(渲染=读,防越权外带) */
+ const renderPathAllowed=(target:unknown,roots:ProjectRoot[],workspace?:ProjectRoot):boolean=>{
+  if(typeof target!=='string'||!path.isAbsolute(target)||target.includes('\0'))return false;
+  return [...roots.map(item=>item.root),...(workspace?[workspace.root]:[])].some(container=>{
+   const rel=path.relative(container,target);
+   return !!rel&&!rel.startsWith('..')&&!path.isAbsolute(rel);
+  });
+ };
  // HTML 预览协议:项目文件沿用 projectRoots(含对话冻结文件夹),库文件与 library:read* 同根
  handlePreviewProtocol({getProjectRoots:projectRoots,getLibraryRoot:()=>libraryDir,getAttachmentRoot:()=>attachmentsDir});
  handle('files:saveAnswer',async(content:string)=>{
@@ -524,22 +603,26 @@ function register(window:BrowserWindow){
  handle('library:readText',(itemPath:string)=>readProjectText(libraryDir,itemPath));
  handle('library:readImage',(itemPath:string)=>readProjectImage(libraryDir,itemPath));
  handle('library:readPdf',(itemPath:string)=>readProjectPdf(libraryDir,itemPath));
- handle('library:readDocx',(itemPath:string)=>readProjectDocx(libraryDir,itemPath));
- handle('library:readXlsx',(itemPath:string)=>readProjectXlsx(libraryDir,itemPath));
- handle('library:readPptx',(itemPath:string)=>readProjectPptx(libraryDir,itemPath));
+ // office 三件套与项目文件/附件同走高保真 LibreOffice→PDF 路径
+ handle('library:readDocx',async(itemPath:string)=>officePreview.readDocumentPreview(await resolveInside(libraryDir,itemPath)));
+ handle('library:readXlsx',async(itemPath:string)=>officePreview.readDocumentPreview(await resolveInside(libraryDir,itemPath)));
+ handle('library:readPptx',async(itemPath:string)=>officePreview.readDocumentPreview(await resolveInside(libraryDir,itemPath)));
  const fileTarget=async(id:string,relative:string)=>{const target=splitProjectPath(projectRoots(id),relative);const resolved=await resolveInside(target.root,target.relative);if(!(await fs.stat(resolved)).isFile())throw new Error('Not a file');return resolved};
  handle('files:open',async(id:string,relative:string)=>{const target=await fileTarget(id,relative);const error=await shell.openPath(target);if(error)throw new Error(error)});
  // 浏览器标签「系统打开」:仅放行 http(s),交给系统默认浏览器
  handle('shell:open-external',async(url:string)=>{if(typeof url!=='string'||!/^https?:\/\//i.test(url))throw new Error('Invalid URL');await shell.openExternal(url)});
+ // 来源站点图标:主进程代理抓取转 data URL(生产 CSP img-src 不放行远端图片)
+ handle('chat:favicon',(url:string)=>faviconDataUrl(url));
+ // 来源页面元数据(标题/摘要):补齐纯文本 URL 来源缺失的展示信息
+ handle('chat:source-meta',(url:string)=>sourceMeta(url));
  handle('files:reveal',async(id:string,relative:string)=>{const target=await fileTarget(id,relative);shell.showItemInFolder(target)});
  handle('files:list',(id:string,relative:string)=>listProjectEntries(projectRoots(id),relative));
  handle('files:search',(id:string,query:string)=>searchProjectEntries(projectRoots(id),query));
  handle('files:readText',async(id:string,relative:string)=>{const target=splitProjectPath(projectRoots(id),relative);return readProjectText(target.root,target.relative)});
  handle('files:readImage',async(id:string,relative:string)=>{const target=splitProjectPath(projectRoots(id),relative);return readProjectImage(target.root,target.relative)});
  handle('files:readPdf',async(id:string,relative:string)=>{const target=splitProjectPath(projectRoots(id),relative);return readProjectPdf(target.root,target.relative)});
- handle('files:readDocx',async(id:string,relative:string)=>{const target=splitProjectPath(projectRoots(id),relative);return readProjectDocx(target.root,target.relative)});
- handle('files:readXlsx',async(id:string,relative:string)=>{const target=splitProjectPath(projectRoots(id),relative);return readProjectXlsx(target.root,target.relative)});
- handle('files:readPptx',async(id:string,relative:string)=>{const target=splitProjectPath(projectRoots(id),relative);return readProjectPptx(target.root,target.relative)});
+ // office 三件套:高保真 LibreOffice→PDF,失败回落原始字节(electron/office-preview.ts)
+ handle('files:readDocument',async(id:string,relative:string)=>{const target=await fileTarget(id,relative);return officePreview.readDocumentPreview(target)});
  handle('projects:remove',async(id:string)=>{if(typeof id!=='string')throw new Error('Invalid project');await update(current=>{const original=current.projects.find(project=>project.id===id);return {...current,projects:removeProject(current.projects,id),chats:original?preserveChatProjectPaths(current.chats??[],original):current.chats}})});
 }
 const hasInstanceLock=app.requestSingleInstanceLock();

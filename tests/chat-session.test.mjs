@@ -52,3 +52,36 @@ test('a transient model failure is auto-resumed once instead of failing the turn
  assert.ok(events.some(event=>event.type==='completed'&&event.text==='恢复完成'),()=>`expected completed event, got ${JSON.stringify(events.filter(event=>event.type!=='delta'))}`);
  assert.ok(!events.some(event=>event.type==='failed'));
 });
+
+test('workspace sessions expose document tools, guidance and write into the chat output folder',async t=>{
+ const {readFile}=await import('node:fs/promises');
+ const directory=await mkdtemp(path.join(os.tmpdir(),'piwork-workspace-chat-'));t.after(()=>rm(directory,{recursive:true,force:true}));
+ const workspace=await mkdtemp(path.join(os.tmpdir(),'piwork-workspace-out-'));t.after(()=>rm(workspace,{recursive:true,force:true}));
+ let body='';const server=createServer((req,res)=>{body='';req.on('data',chunk=>body+=chunk);req.on('end',()=>{res.writeHead(200,{'content-type':'text/event-stream'});
+  if(!body.includes('tool_calls')){
+   const call={index:0,id:'call_doc',type:'function',function:{name:'project_create_office',arguments:JSON.stringify({path:'报告.docx',title:'季度报告',doc:{footer:true},blocks:[{type:'heading',level:1,text:'一、结论'},{type:'paragraph',text:'正文'}]})}};
+   res.write(`data: ${JSON.stringify({id:'test',object:'chat.completion.chunk',created:1,model:'mock',choices:[{index:0,delta:{role:'assistant',tool_calls:[call]},finish_reason:null}]})}\n\n`);
+   res.write(`data: ${JSON.stringify({id:'test',object:'chat.completion.chunk',created:1,model:'mock',choices:[{index:0,delta:{},finish_reason:'tool_calls'}]})}\n\n`);
+  }else{
+   res.write(`data: ${JSON.stringify({id:'test',object:'chat.completion.chunk',created:1,model:'mock',choices:[{index:0,delta:{role:'assistant',content:'文档已生成'},finish_reason:null}]})}\n\n`);
+   res.write(`data: ${JSON.stringify({id:'test',object:'chat.completion.chunk',created:1,model:'mock',choices:[{index:0,delta:{},finish_reason:'stop'}]})}\n\n`);
+  }
+  res.end('data: [DONE]\n\n')})});
+ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));t.after(()=>new Promise(resolve=>server.close(resolve)));
+ const events=[];const session=new ChatSession(event=>events.push(event),null,async()=>true);t.after(()=>session.close());
+ // open(...) 末位参数:chatWorkspace(第 10)与 office_render 的渲染回调(第 11)
+ await session.open({baseUrl:`http://127.0.0.1:${server.address().port}/v1`,modelId:'mock',apiKey:'local',supportsImages:true},directory,directory,undefined,undefined,undefined,undefined,undefined,undefined,{root:workspace,label:'AI 生成'},async()=>({pageCount:1,missingFonts:[],images:[]}));
+ await session.prompt('帮我生成一份 Word 报告');
+ const request=JSON.parse(body);
+ assert.deepEqual(request.tools.map(tool=>tool.function.name).sort(),['office_render','project_append_office','project_create_office','project_list','project_read','project_write']);
+ const system=request.messages.find(message=>message.role==='system')?.content;
+ assert.match(system,/PiWork documents folder/);
+ assert.match(system,/never answer with a script/);
+ assert.match(system,/office_render/);
+ const doc=path.join(workspace,'报告.docx');
+ assert.equal(Buffer.from(await readFile(doc)).subarray(0,2).toString('ascii'),'PK');
+ // 完成 tool 事件携带 workspace 绝对路径(主进程据此登记文档库)
+ const completed=events.find(event=>event.type==='tool'&&event.name==='project_create_office'&&event.status==='completed');
+ assert.equal(completed.path,doc);
+ assert.ok(events.some(event=>event.type==='completed'&&event.text==='文档已生成'));
+});

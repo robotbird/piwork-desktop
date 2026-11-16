@@ -86,6 +86,8 @@ body{--bg:var(--canvas);--side:var(--sidebar);--text:var(--ink);--muted-text:var
 /* preview-file-list 的盒模型规则已并入 .dock-file-list(须排在其后才能解除 max-height:35% 旧覆盖) */
 .header-files{float:right;border:0;background:transparent;color:var(--muted-text)}.preview-file-list>span{display:block;color:var(--muted-text);font-size:12px}
 .preview-actions{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}.preview-actions button{border:1px solid var(--line);border-radius:6px;background:var(--bg);padding:5px 8px;font-size:12px}
+/* office 转 PDF 时引擎声明的缺失字体提示(非错误) */
+.preview-notice{margin:6px 0 0;color:var(--muted-text);font-size:12px;overflow-wrap:anywhere}
 .empty{width:min(100%,700px);min-width:0}.file-browser{width:100%;max-width:660px}
 .file-search{display:grid;gap:5px;margin:12px 0;font-size:12px;color:var(--muted-text)}.file-search input,.project-edit input,.project-edit textarea{width:100%;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--text);padding:8px}.project-edit label{display:grid;gap:6px}.project-edit textarea{min-height:80px}.project-edit button{border:1px solid var(--line);border-radius:7px;background:var(--hover);padding:7px 14px}
 .skill-content{white-space:pre-wrap;overflow-wrap:anywhere;max-height:280px;overflow:auto;background:var(--hover);border-radius:8px;padding:12px;font-size:12px}
@@ -108,7 +110,7 @@ body{--bg:var(--canvas);--side:var(--sidebar);--text:var(--ink);--muted-text:var
 }
 .sidebar-header .brand {
   padding: 0;
-  font-size: 20px;
+  font-size: 16px;
   font-weight: 600;
   letter-spacing: -.03em;
   color: var(--sidebar-accent-foreground);
@@ -254,6 +256,19 @@ main.home .composer-shell {
   margin: auto;
   transform: translateY(16px);
 }
+/* 新对话欢迎语：PiWork logo + 欢迎文案，通用字体居中排列 */
+.composer-greeting {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  margin: 0 0 22px;
+  text-align: center;
+  font-size: 22px;
+  color: var(--foreground);
+  user-select: none;
+}
+.composer-greeting-logo { width: 44px; height: 44px; opacity: .5; }
 .openai-composer { position: relative; z-index: 1; }
 .openai-composer > .composer {
   display: flex;
@@ -575,7 +590,185 @@ button.conversation-attachment:hover { background: var(--secondary); color: var(
   gap: 4px;
   margin-top: 8px;
 }
-.conversation-save { font-size: 13px; color: var(--muted-foreground); }
+/* 消息操作栏 hover 淡入(参考 web 端 group-hover/message):用户/助手回复一致,悬停或键盘聚焦时显示 */
+.conversation-message-actions-user { justify-content: flex-end; }
+.conversation-message .conversation-message-actions {
+  opacity: 0;
+  transition: opacity .15s ease;
+  pointer-events: none;
+}
+.conversation-message:hover .conversation-message-actions,
+.conversation-message:focus-within .conversation-message-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+/* 用户气泡内联编辑器(参考 ChatGPT):通栏中性灰大圆角容器,文本居上、
+   取消/发送胶囊按钮居容器右下;textarea 透明无边框,留出改写空间 */
+.conversation-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+  padding: 16px 16px 12px 20px;
+  border-radius: 24px;
+  background: var(--muted);
+}
+.conversation-edit-input {
+  width: 100%;
+  /* 高度随内容自适应(组件内有 JS 增高逻辑),上限 320px */
+  min-height: 0;
+  max-height: 320px;
+  border: 0;
+  outline: none;
+  box-shadow: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: inherit;
+  resize: none;
+  overflow-y: auto;
+}
+/* 光标即焦点指示;globals.css 的 textarea:focus-visible(0,1,1)特异性更高,需盖过 */
+.conversation-edit-input:focus,
+.conversation-edit-input:focus-visible { outline: none; box-shadow: none; }
+/* 发送胶囊用前景/背景反色(对齐 ChatGPT 黑/白按钮),不走蓝色 primary;深色主题自动翻转为浅色 */
+.conversation-edit-actions button[data-variant='pill'] { background: var(--foreground); color: var(--background); }
+.conversation-edit-actions button[data-variant='pill']:hover { background: color-mix(in srgb, var(--foreground) 88%, var(--background)); }
+.conversation-edit-actions { display: flex; justify-content: flex-end; gap: 8px; }
+/* 联网来源 chip(参考元宝):叠放 favicon 的圆角胶囊,点击展开右侧引用来源面板 */
+.conversation-sources-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 5px 10px 5px 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--muted);
+  color: var(--muted-foreground);
+  font-size: 12.5px;
+  line-height: 16px;
+}
+.conversation-sources-chip:enabled:hover { background: var(--secondary); color: var(--foreground); }
+.conversation-sources-favicons { display: inline-flex; align-items: center; }
+.conversation-source-favicon,
+.sources-panel-favicon {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  object-fit: cover;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1;
+  user-select: none;
+}
+.conversation-source-favicon + .conversation-source-favicon { margin-left: -5px; }
+.conversation-sources-favicons .conversation-source-favicon {
+  border: 1.5px solid var(--card);
+  background: var(--card);
+}
+.conversation-sources-chip svg { flex: none; }
+/* 聊天主列:平时占满 main;引用来源面板打开时 main 转横向 flex,与面板并排平铺 */
+.chat-column {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+main[data-sources] { flex-direction: row; }
+/* 引用来源面板:与聊天内容并排的固定右侧栏(不覆盖内容),窄窗随 30vw 收缩 */
+.sources-panel {
+  flex: none;
+  width: clamp(300px, 30vw, 420px);
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--card);
+  border-left: 1px solid var(--border);
+  animation: sources-panel-in .24s cubic-bezier(.4, 0, .2, 1);
+}
+@keyframes sources-panel-in { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: translateX(0); } }
+.sources-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: none;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.sources-panel-header h2 { font-size: 15px; font-weight: 600; margin: 0; }
+.sources-panel-close {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--muted-foreground);
+}
+.sources-panel-close:hover { background: var(--secondary); color: var(--foreground); }
+.sources-panel-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  list-style: none;
+  margin: 0;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+/* 条目布局对齐元宝参考:首行 favicon+站点名,标题单行截断,摘要最多两行 */
+.sources-panel-item {
+  display: block;
+  width: 100%;
+  padding: 12px 14px;
+  border: 0;
+  border-radius: 12px;
+  background: none;
+  text-align: left;
+}
+.sources-panel-item:hover { background: var(--secondary); }
+.sources-panel-favicon { width: 16px; height: 16px; }
+.sources-panel-text { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.sources-panel-site {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  color: var(--muted-foreground);
+  font-size: 12.5px;
+  line-height: 18px;
+}
+.sources-panel-host {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sources-panel-title {
+  color: var(--foreground);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sources-panel-snippet {
+  color: var(--muted-foreground);
+  font-size: 12.5px;
+  line-height: 18px;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
 .conversation .conversation-jump {
   position: absolute;
   bottom: 16px;
@@ -765,6 +958,11 @@ button.conversation-attachment:hover { background: var(--secondary); color: var(
 
 /* Step descriptions share answer typography; tool execution stays muted. */
 .conversation-processing { margin-bottom: 12px; min-width: 0; }
+.conversation-processing-gear { flex: none; width: 1em; height: 1em; color: var(--muted-foreground); }
+.conversation-processing-gear-wheel { transform-box: fill-box; transform-origin: center; }
+.conversation-processing-gear[data-spinning] .conversation-processing-gear-wheel { animation: conversation-gear-spin 2.5s linear infinite; }
+@keyframes conversation-gear-spin { to { transform: rotate(360deg); } }
+@media(prefers-reduced-motion:reduce){ .conversation-processing-gear[data-spinning] .conversation-processing-gear-wheel { animation: none; } }
 .conversation-processing-trigger {
   display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 0 10px;
   border-bottom: 1px solid var(--border); color: var(--muted-foreground);

@@ -276,13 +276,18 @@ export function DocumentLibrary({ language, onClose }: { language: LibraryLangua
         const isXlsx = /\.xlsx$/i.test(item.name);
         const isDocx = /\.docx$/i.test(item.name);
         const isPdf = /\.pdf$/i.test(item.name);
-        const content = isPptx ? await window.desktop.libraryReadPptx(item.path)
-          : isXlsx ? await window.desktop.libraryReadXlsx(item.path)
-          : isDocx ? await window.desktop.libraryReadDocx(item.path)
-          : isPdf ? await window.desktop.libraryReadPdf(item.path)
-          : isImage ? await window.desktop.libraryReadImage(item.path).then(image => `data:${image.mime};base64,${image.base64}`)
-          : await window.desktop.libraryReadText(item.path);
-        next = { status: 'ready', kind: isPptx ? 'pptx' : isXlsx ? 'xlsx' : isDocx ? 'docx' : isPdf ? 'pdf' : isImage ? 'image' : 'text', content };
+        // office 三件套走主进程高保真 LibreOffice→PDF(返回 kind 可能是 pdf),失败已回落原始字节
+        if (isPptx || isXlsx || isDocx) {
+          const preview = isPptx ? await window.desktop.libraryReadPptx(item.path)
+            : isXlsx ? await window.desktop.libraryReadXlsx(item.path)
+            : await window.desktop.libraryReadDocx(item.path);
+          next = { status: 'ready', kind: preview.kind, content: preview.content };
+        } else {
+          const content = isPdf ? await window.desktop.libraryReadPdf(item.path)
+            : isImage ? await window.desktop.libraryReadImage(item.path).then(image => `data:${image.mime};base64,${image.base64}`)
+            : await window.desktop.libraryReadText(item.path);
+          next = { status: 'ready', kind: isPdf ? 'pdf' : isImage ? 'image' : 'text', content };
+        }
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : '';

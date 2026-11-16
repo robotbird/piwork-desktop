@@ -143,7 +143,7 @@ try {
   await page.getByRole('button',{name:'Send',exact:true}).click();
   await expect(input).toHaveValue('整理\u2003alpha 文档');
   await expect(mention).toHaveText('alpha');
-  await expect(page.getByText('Chat could not finish. Check the model gateway, selected skill or MCP settings.')).toBeVisible();
+  await expect(page.getByText('Chat could not finish. Check the model configuration, selected skill or MCP settings.')).toBeVisible();
   const [sentText,,sentSkill]=await app.evaluate(()=>globalThis.__slashSend);
   assert.equal(sentText,'整理 文档');
   const selectedSkill=await page.evaluate(()=>window.desktop.listSkills());

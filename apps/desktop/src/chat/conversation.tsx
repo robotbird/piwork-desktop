@@ -1,5 +1,5 @@
-import {Fragment, lazy, Suspense, useEffect, useState, type ReactNode} from 'react';
-import {ArrowDownIcon, CheckIcon, CopyIcon, DownloadIcon, FileTextIcon, SparklesIcon} from 'lucide-react';
+import {Fragment, lazy, Suspense, useEffect, useRef, useState, type ReactNode} from 'react';
+import {ArrowDownIcon, CheckIcon, CopyIcon, DownloadIcon, FileTextIcon, PencilIcon, SparklesIcon} from 'lucide-react';
 import {useStickToBottom} from 'use-stick-to-bottom';
 import {Button} from '@/components/ui/button';
 import {copyTextToClipboard} from '@/lib/utils';
@@ -11,7 +11,8 @@ import {visibleAssistantText} from './assistant-text';
 import {Processing,type ProcessCopy} from './processing';
 import {ToolActivity,type ToolActivityCopy} from './tool-activity';
 import {isImageAttachment,AttachmentThumb} from './attachment-image';
-import type {ChatMessage,ChatAttachmentRef} from '../../shared/types';
+import {messageSources,SourcesChip} from './sources';
+import type {ChatMessage,ChatAttachmentRef,MessageSource} from '../../shared/types';
 
 const DocumentResponse=lazy(()=>import('./document-response').then(module=>({default:module.DocumentResponse})));
 
@@ -22,12 +23,15 @@ type Copy={
   copy:string;
   copied:string;
   copyFailed:string;
-  saveAnswer:string;
+  edit:string;
+  cancel:string;
+  resend:string;
   saveHtml:string;
   htmlSaved:string;
   htmlSaveFailed:string;
   openHtml:string;
   preview:string;
+  sources:(count:number)=>string;
 };
 
 function HtmlFileCard({name,action,onClick,disabled=false}:{
@@ -59,14 +63,45 @@ function InlineHtmlCard({name,content,copy,disabled,saving,onPreview,onSave}:{
   );
 }
 
-function ConversationMessage({message, latest, busy, copy, toolCopy, unexecutedToolRequest, onSave, onOpenToolFile, onOpenAttachment, onPreviewHtml, onDocumentAction, fileFolders}: {
-  message:ChatMessage; latest:boolean; busy:boolean; copy:Copy; toolCopy:ToolActivityCopy;
-  unexecutedToolRequest:string; fileFolders?:DocumentFolder[]; onDocumentAction?:(path:string,action:DocumentAction)=>void; onSave?:(text:string)=>void; onOpenToolFile?:(path:string)=>void;
-  onOpenAttachment?:(ref:ChatAttachmentRef)=>void; onPreviewHtml?:(content:string,name:string)=>void;
+function ConversationMessage({message, index, latest, busy, copy, toolCopy, unexecutedToolRequest, onEditMessage, onOpenToolFile, onOpenAttachment, onPreviewHtml, onDocumentAction, fileFolders, onOpenSources}: {
+  message:ChatMessage; index:number; latest:boolean; busy:boolean; copy:Copy; toolCopy:ToolActivityCopy;
+  unexecutedToolRequest:string; fileFolders?:DocumentFolder[]; onDocumentAction?:(path:string,action:DocumentAction)=>void; onOpenToolFile?:(path:string)=>void;
+  onEditMessage?:(index:number,text:string)=>void; onOpenAttachment?:(ref:ChatAttachmentRef)=>void; onPreviewHtml?:(content:string,name:string)=>void; onOpenSources?:(sources:MessageSource[])=>void;
 }) {
   const [copyResult,setCopyResult]=useState<'success'|'failed'>();
   const [savingHtml,setSavingHtml]=useState(false);
   const [htmlSaveResult,setHtmlSaveResult]=useState('');
+  /* 用户问题气泡内联编辑(参考 web 端 hover 编辑):提交后由 onEditMessage 截断重生成 */
+  const [editing,setEditing]=useState(false);
+  const [draft,setDraft]=useState('');
+  const editorRef=useRef<HTMLTextAreaElement>(null);
+  useEffect(()=>{
+    const textarea=editorRef.current;
+    if(!textarea||!editing)return;
+    textarea.focus();
+    const end=textarea.value.length;
+    textarea.setSelectionRange(end,end);
+  },[editing]);
+  useEffect(()=>{
+    const textarea=editorRef.current;
+    if(!textarea)return;
+    textarea.style.height='auto';
+    textarea.style.height=`${Math.min(320,textarea.scrollHeight)}px`;
+  },[draft,editing]);
+  function startEdit(){setDraft(message.text);setEditing(true)}
+  function cancelEdit(){setEditing(false);setDraft('')}
+  function submitEdit(){
+    const trimmed=draft.trim();
+    if(!trimmed||busy)return;
+    setEditing(false);
+    setDraft('');
+    onEditMessage?.(index,trimmed);
+  }
+  function handleEditKeyDown(event:React.KeyboardEvent<HTMLTextAreaElement>){
+    if(event.key==='Escape'){event.preventDefault();cancelEdit();return}
+    /* 中文输入法组词回车不提交 */
+    if(event.key==='Enter'&&!event.shiftKey&&!event.nativeEvent.isComposing){event.preventDefault();submitEdit()}
+  }
   async function saveHtml(content:string,name:string) {
     setSavingHtml(true);
     setHtmlSaveResult('');
@@ -88,8 +123,10 @@ function ConversationMessage({message, latest, busy, copy, toolCopy, unexecutedT
   /* 携带技能发送的用户消息:气泡前置 ✨ 技能名标识(浅紫高亮,对齐 Codex 参考) */
   const skillName=role==='user'?message.skillName:undefined;
   const streaming=busy&&latest;
-  const outputPaths=role==='assistant'?[...new Set([...documentReferences(segments?.filter(segment=>segment.kind==='text').map(segment=>segment.text).join('\n')||message.text),...(toolEvents??[]).flatMap(event=>event.status==='completed'&&['project_write','project_create_office'].includes(event.name)&&event.path&&documentPath(event.path)?[event.path]:[])])]:[];
+  const outputPaths=role==='assistant'?[...new Set([...documentReferences(segments?.filter(segment=>segment.kind==='text').map(segment=>segment.text).join('\n')||message.text),...(toolEvents??[]).flatMap(event=>event.status==='completed'&&['project_write','project_create_office','project_append_office'].includes(event.name)&&event.path&&documentPath(event.path)?[event.path]:[])])]:[];
   const outputCards=<GeneratedFiles paths={uniqueDocumentPaths(outputPaths,fileFolders)} onPreview={onOpenToolFile} onAction={onDocumentAction}/>;
+  /* 联网来源 chip(元宝式):跨工具聚合去重后展示,点击在右侧打开引用来源面板 */
+  const sources=role==='assistant'?messageSources(message):[];
   /* 分段交错渲染(对齐 pi 轮次语义/ZCode 展示):text 段与工具组段按时间线交替;
      segments 缺省(旧数据/异常兜底)走下方平铺路径 */
   if(role==='assistant'&&segments?.length){
@@ -111,7 +148,9 @@ function ConversationMessage({message, latest, busy, copy, toolCopy, unexecutedT
     const waiting=streaming&&!anyText&&!anyTools&&!hasHtml;
     if(!anyText&&!waiting&&!showUnexecuted&&!anyTools&&!hasHtml)return null;
     // A trailing text block is the answer; preceding text and tools form the process.
-    const answerIndex=blocks.at(-1)?.kind==='text'?blocks.length-1:-1;
+    const lastBlock=blocks.at(-1);
+    const answerIndex=lastBlock?.kind==='text'?blocks.length-1:-1;
+    const answerText=lastBlock?.kind==='text'?lastBlock.text:'';
     const processBlocks=blocks.slice(0,answerIndex<0?blocks.length:answerIndex);
     const process=<Processing active={streaming} copy={copy.process} startedAt={message.startedAt} durationMs={message.durationMs}>
       {processBlocks.length>0?processBlocks.map((block,index)=>block.kind==='tools'
@@ -151,14 +190,16 @@ function ConversationMessage({message, latest, busy, copy, toolCopy, unexecutedT
             );
           })}
           {outputCards}
+          {sources.length>0&&onOpenSources&&<SourcesChip label={copy.sources(sources.length)} onOpen={()=>onOpenSources(sources)} sources={sources}/>}
           {htmlSaveResult&&<p className="conversation-tool-progress" role="status">{htmlSaveResult}</p>}
         </div>
-        {anyText&&!busy&&(
+        {/* 只复制最终回答段(message.text 还拼接了“思考和处理过程”里的过程文本) */}
+        {answerText&&!busy&&(
           <div className="conversation-message-actions">
             <Button
               aria-label={copy.copy}
               className="text-muted-foreground"
-              onClick={async()=>setCopyResult(await copyTextToClipboard(message.text)?'success':'failed')}
+              onClick={async()=>setCopyResult(await copyTextToClipboard(answerText)?'success':'failed')}
               size="icon-sm"
               title={copy.copy}
               type="button"
@@ -166,7 +207,6 @@ function ConversationMessage({message, latest, busy, copy, toolCopy, unexecutedT
             >
               {copyResult==='success'?<CheckIcon/>:<CopyIcon/>}
             </Button>
-            {onSave&&<Button className="conversation-save" size="sm" type="button" variant="ghost" onClick={()=>onSave(message.text)}>{copy.saveAnswer}</Button>}
             {copyResult&&<span className={copyResult==='success'?'sr-only':'text-xs text-muted-foreground'} role="status">
               {copyResult==='success'?copy.copied:copy.copyFailed}
             </span>}
@@ -237,10 +277,39 @@ function ConversationMessage({message, latest, busy, copy, toolCopy, unexecutedT
               <DocumentResponse onOpenFile={onOpenToolFile}>{text}</DocumentResponse>
             </Suspense>
           </div>
+        ) : role==='user'&&editing ? (
+          <div className="conversation-edit">
+            <textarea className="conversation-edit-input" onChange={event=>setDraft(event.target.value)} onKeyDown={handleEditKeyDown} ref={editorRef} rows={1} value={draft}/>
+            <div className="conversation-edit-actions">
+              <Button className="rounded-full" onClick={cancelEdit} type="button" variant="outline">{copy.cancel}</Button>
+              <Button disabled={!draft.trim()} onClick={submitEdit} type="button" variant="pill">{copy.resend}</Button>
+            </div>
+          </div>
         ) : <div className={'conversation-bubble conversation-text'+(skillName?' conversation-bubble-skill':'')}>{skillName&&<span className="conversation-skill-tag"><SparklesIcon aria-hidden className="size-3.5"/>{skillName}</span>}{text}</div>}
         {outputCards}
+        {sources.length>0&&onOpenSources&&<SourcesChip label={copy.sources(sources.length)} onOpen={()=>onOpenSources(sources)} sources={sources}/>}
         {showUnexecuted&&<p className="conversation-tool-progress">{unexecutedToolRequest}</p>}
       </div>
+      {/* 用户问题 hover 操作栏(参考 web 端 group-hover/message):编辑在前、复制在后,淡入显示;流式输出与编辑中隐藏 */}
+      {role==='user'&&message.text&&!busy&&!editing&&(
+        <div className="conversation-message-actions conversation-message-actions-user">
+          {onEditMessage&&<Button aria-label={copy.edit} className="text-muted-foreground" onClick={startEdit} size="icon-sm" title={copy.edit} type="button" variant="ghost"><PencilIcon/></Button>}
+          <Button
+            aria-label={copy.copy}
+            className="text-muted-foreground"
+            onClick={async()=>setCopyResult(await copyTextToClipboard(message.text)?'success':'failed')}
+            size="icon-sm"
+            title={copy.copy}
+            type="button"
+            variant="ghost"
+          >
+            {copyResult==='success'?<CheckIcon/>:<CopyIcon/>}
+          </Button>
+          {copyResult&&<span className={copyResult==='success'?'sr-only':'text-xs text-muted-foreground'} role="status">
+            {copyResult==='success'?copy.copied:copy.copyFailed}
+          </span>}
+        </div>
+      )}
       {role==='assistant'&&text&&!busy&&(
         <div className="conversation-message-actions">
           <Button
@@ -254,7 +323,6 @@ function ConversationMessage({message, latest, busy, copy, toolCopy, unexecutedT
           >
             {copyResult==='success'?<CheckIcon/>:<CopyIcon/>}
           </Button>
-          {onSave&&<Button className="conversation-save" size="sm" type="button" variant="ghost" onClick={()=>onSave(text)}>{copy.saveAnswer}</Button>}
           {copyResult&&<span className={copyResult==='success'?'sr-only':'text-xs text-muted-foreground'} role="status">
             {copyResult==='success'?copy.copied:copy.copyFailed}
           </span>}
@@ -264,9 +332,9 @@ function ConversationMessage({message, latest, busy, copy, toolCopy, unexecutedT
   );
 }
 
-export function Conversation({messages,busy,copy,context,toolCopy,unexecutedToolRequest,onSave,onOpenToolFile,onOpenAttachment,onPreviewHtml,onDocumentAction,fileFolders}: {
+export function Conversation({messages,busy,copy,context,toolCopy,unexecutedToolRequest,onEditMessage,onOpenToolFile,onOpenAttachment,onPreviewHtml,onDocumentAction,fileFolders,onOpenSources}: {
   messages:ChatMessage[]; busy:boolean; copy:Copy; context?:ReactNode; toolCopy:ToolActivityCopy; unexecutedToolRequest:string;
-  fileFolders?:DocumentFolder[]; onDocumentAction?:(path:string,action:DocumentAction)=>void; onSave?:(text:string)=>void; onOpenToolFile?:(path:string)=>void; onOpenAttachment?:(ref:ChatAttachmentRef)=>void; onPreviewHtml?:(content:string,name:string)=>void;
+  fileFolders?:DocumentFolder[]; onDocumentAction?:(path:string,action:DocumentAction)=>void; onOpenToolFile?:(path:string)=>void; onEditMessage?:(index:number,text:string)=>void; onOpenAttachment?:(ref:ChatAttachmentRef)=>void; onPreviewHtml?:(content:string,name:string)=>void; onOpenSources?:(sources:MessageSource[])=>void;
 }) {
   const {scrollRef,contentRef,isNearBottom,scrollToBottom}=useStickToBottom({
     initial:'instant',
@@ -287,7 +355,8 @@ export function Conversation({messages,busy,copy,context,toolCopy,unexecutedTool
               copy={copy}
               key={index}
               message={message}
-              onSave={onSave}
+              index={index}
+              onEditMessage={onEditMessage}
               latest={index===messages.length-1}
               toolCopy={toolCopy}
               unexecutedToolRequest={unexecutedToolRequest}
@@ -296,6 +365,7 @@ export function Conversation({messages,busy,copy,context,toolCopy,unexecutedTool
               fileFolders={fileFolders}
               onDocumentAction={onDocumentAction}
               onPreviewHtml={onPreviewHtml}
+              onOpenSources={onOpenSources}
             />
           ))}
         </div>

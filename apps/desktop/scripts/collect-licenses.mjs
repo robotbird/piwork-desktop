@@ -12,10 +12,21 @@ const rows=[];let counter=0;
 for(const [license,packages] of Object.entries(inventory))for(const item of packages){
  for(const dir of item.paths){
   const info=JSON.parse(await readFile(path.join(dir,'package.json'),'utf8'));
-  const names=(await readdir(dir,{withFileTypes:true})).filter(entry=>entry.isFile()&&/^(licen[cs]e|copying|notice)(\.|$)/i.test(entry.name)).map(entry=>entry.name).sort();
+  const entries=await readdir(dir,{withFileTypes:true});
+  const collected=[];
+  for(const entry of entries){
+   if(entry.isFile()&&/^(licen[cs]e|copying|notice)(\.|$)/i.test(entry.name))collected.push({name:entry.name,source:path.join(dir,entry.name)});
+   // 部分包(如 libreoffice-kit 引擎)把许可放在 licenses/ 子目录:一并收集
+   else if(entry.isDirectory()&&/^(?:licen[cs]es?|notices?)$/i.test(entry.name)){
+    for(const file of await readdir(path.join(dir,entry.name),{withFileTypes:true}))if(file.isFile())collected.push({name:file.name,source:path.join(dir,entry.name,file.name)});
+   }
+  }
+  collected.sort((a,b)=>a.name.localeCompare(b.name));
+  const seen=new Set();const files=[];
+  for(const item of collected){if(seen.has(item.name))continue;seen.add(item.name);files.push(item)}
   const folder=String(++counter).padStart(4,'0');
-  if(names.length){await mkdir(path.join(out,'packages',folder));for(const name of names)await copyFile(path.join(dir,name),path.join(out,'packages',folder,name))}
-  rows.push({name:item.name,version:info.version,license,homepage:item.homepage??'',files:names.map(name=>`packages/${folder}/${name}`)});
+  if(files.length){await mkdir(path.join(out,'packages',folder),{recursive:true});for(const item of files)await copyFile(item.source,path.join(out,'packages',folder,item.name))}
+  rows.push({name:item.name,version:info.version,license,homepage:item.homepage??'',files:files.map(item=>`packages/${folder}/${item.name}`)});
  }
 }
 rows.sort((a,b)=>a.name.localeCompare(b.name)||a.version.localeCompare(b.version));

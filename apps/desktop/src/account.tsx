@@ -8,7 +8,7 @@ import zh from '@/i18n/messages/zh.json';
 import en from '@/i18n/messages/en.json';
 const messages={'zh-CN':zh.desktopAccount,en:en.desktopAccount} as const;
 export function Account({language,onChanged,onOpenHistory}:{language:'zh-CN'|'en';onChanged:(status:AccountStatus|null)=>void;onOpenHistory:()=>void}){
- const t=messages[language];const [baseUrl,setBaseUrl]=useState('https://piwork.net');const [status,setStatus]=useState<AccountStatus|null>(null);const [error,setError]=useState('');const [busy,setBusy]=useState(false);
+ const t=messages[language];const [baseUrl,setBaseUrl]=useState('https://app.piwork.net');const [status,setStatus]=useState<AccountStatus|null>(null);const [error,setError]=useState('');const [busy,setBusy]=useState(false);
  async function refresh(){setBusy(true);try{const value=await window.desktop.accountStatus();setStatus(value);onChanged(value);if(value.loginServer??value.baseUrl)setBaseUrl((value.loginServer??value.baseUrl)!);setError(value.loginFailed?t.loginFailed:'')}catch{setStatus(null);onChanged(null);setError(t.error)}finally{setBusy(false)}}
  useEffect(()=>{void refresh();return window.desktop.onAccountChanged(()=>void refresh())},[]);
  async function login(e:React.FormEvent){e.preventDefault();setBusy(true);try{await window.desktop.accountLogin(baseUrl);await refresh()}catch{setError(t.error)}finally{setBusy(false)}}

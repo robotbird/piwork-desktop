@@ -1,0 +1,516 @@
+{
+ "packageId": "piwork-llm-zhipuai",
+ "providerKey": "zhipuai",
+ "version": "1.0.0",
+ "name": {
+  "en": "ZHIPU AI",
+  "zh-CN": "智谱 AI"
+ },
+ "description": {
+  "en": "Official ZHIPU AI models: the GLM chat family with thinking mode, tool calling, and vision.",
+  "zh-CN": "智谱 AI 官方模型：GLM 全系对话模型，支持思考模式、工具调用与视觉理解。"
+ },
+ "baseUrl": "https://open.bigmodel.cn/api/paas/v4",
+ "networkHosts": [
+  "open.bigmodel.cn"
+ ],
+ "validationModel": "glm-5-turbo",
+ "helpUrl": "https://open.bigmodel.cn/usercenter/apikeys",
+ "credentialFields": [
+  {
+   "variable": "api_key",
+   "type": "secret-input",
+   "label": {
+    "en": "API Key",
+    "zh-CN": "API Key"
+   },
+   "required": true,
+   "placeholder": {
+    "en": "Enter your API Key",
+    "zh-CN": "在此输入您的 API Key"
+   }
+  }
+ ],
+ "compat": {
+  "maxTokensField": "max_tokens",
+  "thinkingFormat": "zai",
+  "supportsDeveloperRole": false,
+  "supportsReasoningEffort": false,
+  "supportsStore": false
+ },
+ "models": [
+  {
+   "modelId": "glm-5.3",
+   "label": {
+    "en": "glm-5.3"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": true,
+   "contextSize": 1000000,
+   "defaultMaxTokens": 65536
+  },
+  {
+   "modelId": "glm-5.3-flash",
+   "label": {
+    "en": "glm-5.3-flash"
+   },
+   "vision": true,
+   "reasoning": false,
+   "toolCall": true,
+   "contextSize": 1000000,
+   "defaultMaxTokens": 65536
+  },
+  {
+   "modelId": "glm-5.2",
+   "label": {
+    "en": "glm-5.2"
+   },
+   "vision": false,
+   "reasoning": true,
+   "toolCall": true,
+   "contextSize": 1000000,
+   "defaultMaxTokens": 65536
+  },
+  {
+   "modelId": "glm-5.1",
+   "label": {
+    "en": "glm-5.1"
+   },
+   "vision": false,
+   "reasoning": true,
+   "toolCall": true,
+   "contextSize": 204800,
+   "defaultMaxTokens": 131072
+  },
+  {
+   "modelId": "glm-5v-turbo",
+   "label": {
+    "en": "glm-5v-turbo"
+   },
+   "vision": true,
+   "reasoning": true,
+   "toolCall": true,
+   "contextSize": 204800,
+   "defaultMaxTokens": 131072
+  },
+  {
+   "modelId": "glm-5-turbo",
+   "label": {
+    "en": "glm-5-turbo"
+   },
+   "vision": false,
+   "reasoning": true,
+   "toolCall": true,
+   "contextSize": 204800,
+   "defaultMaxTokens": 131072
+  },
+  {
+   "modelId": "glm-5",
+   "label": {
+    "en": "glm-5"
+   },
+   "vision": false,
+   "reasoning": true,
+   "toolCall": true,
+   "contextSize": 204800,
+   "defaultMaxTokens": 131072
+  },
+  {
+   "modelId": "glm-4.7",
+   "label": {
+    "en": "glm-4.7"
+   },
+   "vision": false,
+   "reasoning": true,
+   "toolCall": true,
+   "contextSize": 200000,
+   "defaultMaxTokens": 4096
+  },
+  {
+   "modelId": "glm-4.7-flash",
+   "label": {
+    "en": "glm-4.7-flash"
+   },
+   "vision": false,
+   "reasoning": true,
+   "toolCall": true,
+   "contextSize": 204800,
+   "defaultMaxTokens": 131072
+  },
+  {
+   "modelId": "glm-4.7-flashx",
+   "label": {
+    "en": "glm-4.7-flashx"
+   },
+   "vision": false,
+   "reasoning": true,
+   "toolCall": true,
+   "contextSize": 204800,
+   "defaultMaxTokens": 131072
+  },
+  {
+   "modelId": "glm-4.6",
+   "label": {
+    "en": "glm-4.6"
+   },
+   "vision": false,
+   "reasoning": true,
+   "toolCall": true,
+   "contextSize": 200000,
+   "defaultMaxTokens": 4096
+  },
+  {
+   "modelId": "glm-4.5",
+   "label": {
+    "en": "glm-4.5"
+   },
+   "vision": false,
+   "reasoning": true,
+   "toolCall": true,
+   "contextSize": 131072,
+   "defaultMaxTokens": 1024
+  },
+  {
+   "modelId": "glm-4.5-x",
+   "label": {
+    "en": "glm-4.5-x"
+   },
+   "vision": false,
+   "reasoning": true,
+   "toolCall": true,
+   "contextSize": 131072,
+   "defaultMaxTokens": 1024
+  },
+  {
+   "modelId": "glm-4.5-air",
+   "label": {
+    "en": "glm-4.5-air"
+   },
+   "vision": false,
+   "reasoning": true,
+   "toolCall": true,
+   "contextSize": 131072,
+   "defaultMaxTokens": 1024
+  },
+  {
+   "modelId": "glm-4.5-airx",
+   "label": {
+    "en": "glm-4.5-airx"
+   },
+   "vision": false,
+   "reasoning": true,
+   "toolCall": true,
+   "contextSize": 131072,
+   "defaultMaxTokens": 1024
+  },
+  {
+   "modelId": "glm-4.5-flash",
+   "label": {
+    "en": "glm-4.5-flash"
+   },
+   "vision": false,
+   "reasoning": true,
+   "toolCall": true,
+   "contextSize": 131072,
+   "defaultMaxTokens": 1024
+  },
+  {
+   "modelId": "glm-4.5v",
+   "label": {
+    "en": "glm-4.5v"
+   },
+   "vision": true,
+   "reasoning": true,
+   "toolCall": false,
+   "contextSize": 16384,
+   "defaultMaxTokens": 16384
+  },
+  {
+   "modelId": "glm-4.1v-thinking-flash",
+   "label": {
+    "en": "glm-4.1v-thinking-flash"
+   },
+   "vision": true,
+   "reasoning": true,
+   "toolCall": false,
+   "contextSize": 65536,
+   "defaultMaxTokens": 1024
+  },
+  {
+   "modelId": "glm-4.1v-thinking-flashx",
+   "label": {
+    "en": "glm-4.1v-thinking-flashx"
+   },
+   "vision": true,
+   "reasoning": true,
+   "toolCall": false,
+   "contextSize": 65536,
+   "defaultMaxTokens": 1024
+  },
+  {
+   "modelId": "glm-4-plus",
+   "label": {
+    "en": "glm-4-plus"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": true,
+   "contextSize": 131072,
+   "defaultMaxTokens": 1024
+  },
+  {
+   "modelId": "glm-4",
+   "label": {
+    "en": "glm-4"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": true,
+   "contextSize": 131072,
+   "defaultMaxTokens": 1024
+  },
+  {
+   "modelId": "glm-4-0520",
+   "label": {
+    "en": "glm-4-0520"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": true,
+   "contextSize": 131072,
+   "defaultMaxTokens": 1024
+  },
+  {
+   "modelId": "glm-4-air",
+   "label": {
+    "en": "glm-4-air"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": true,
+   "contextSize": 131072,
+   "defaultMaxTokens": 1024
+  },
+  {
+   "modelId": "glm-4-air-0111",
+   "label": {
+    "en": "glm-4-air-0111"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": true,
+   "contextSize": 131072,
+   "defaultMaxTokens": 1024
+  },
+  {
+   "modelId": "glm-4-air-250414",
+   "label": {
+    "en": "glm-4-air-250414"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": true,
+   "contextSize": 131072,
+   "defaultMaxTokens": 1024
+  },
+  {
+   "modelId": "glm-4-airx",
+   "label": {
+    "en": "glm-4-airx"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": true,
+   "contextSize": 8192,
+   "defaultMaxTokens": 1024
+  },
+  {
+   "modelId": "glm-4-flash",
+   "label": {
+    "en": "glm-4-flash"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": true,
+   "contextSize": 131072,
+   "defaultMaxTokens": 1024
+  },
+  {
+   "modelId": "glm-4-flash-250414",
+   "label": {
+    "en": "glm-4-flash-250414"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": true,
+   "contextSize": 131072,
+   "defaultMaxTokens": 1024
+  },
+  {
+   "modelId": "glm-4-flashx",
+   "label": {
+    "en": "glm-4-flashx"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": true,
+   "contextSize": 131072,
+   "defaultMaxTokens": 1024
+  },
+  {
+   "modelId": "glm-4-flashx-250414",
+   "label": {
+    "en": "glm-4-flashx-250414"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": true,
+   "contextSize": 131072,
+   "defaultMaxTokens": 1024
+  },
+  {
+   "modelId": "glm-4-long",
+   "label": {
+    "en": "glm-4-long"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": true,
+   "contextSize": 1048576,
+   "defaultMaxTokens": 1024
+  },
+  {
+   "modelId": "glm-4v",
+   "label": {
+    "en": "glm-4v"
+   },
+   "vision": true,
+   "reasoning": false,
+   "toolCall": false,
+   "contextSize": 8192,
+   "defaultMaxTokens": 1024
+  },
+  {
+   "modelId": "glm-4v-flash",
+   "label": {
+    "en": "glm-4v-flash"
+   },
+   "vision": true,
+   "reasoning": false,
+   "toolCall": false,
+   "contextSize": 4096,
+   "defaultMaxTokens": 1024
+  },
+  {
+   "modelId": "glm-4v-plus",
+   "label": {
+    "en": "glm-4v-plus"
+   },
+   "vision": true,
+   "reasoning": false,
+   "toolCall": false,
+   "contextSize": 8192,
+   "defaultMaxTokens": 1024
+  },
+  {
+   "modelId": "glm-4v-plus-0111",
+   "label": {
+    "en": "glm-4v-plus-0111"
+   },
+   "vision": true,
+   "reasoning": false,
+   "toolCall": false,
+   "contextSize": 16384,
+   "defaultMaxTokens": 1024
+  },
+  {
+   "modelId": "glm-z1-air",
+   "label": {
+    "en": "glm-z1-air"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": false,
+   "contextSize": 131072,
+   "defaultMaxTokens": 8192
+  },
+  {
+   "modelId": "glm-z1-airx",
+   "label": {
+    "en": "glm-z1-airx"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": false,
+   "contextSize": 32768,
+   "defaultMaxTokens": 8192
+  },
+  {
+   "modelId": "glm-z1-flash",
+   "label": {
+    "en": "glm-z1-flash"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": false,
+   "contextSize": 131072,
+   "defaultMaxTokens": 8192
+  },
+  {
+   "modelId": "glm-z1-flashx",
+   "label": {
+    "en": "glm-z1-flashx"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": false,
+   "contextSize": 131072,
+   "defaultMaxTokens": 8192
+  },
+  {
+   "modelId": "glm-3-turbo",
+   "label": {
+    "en": "glm-3-turbo"
+   },
+   "vision": false,
+   "reasoning": false,
+   "toolCall": true,
+   "contextSize": 131072,
+   "defaultMaxTokens": 1024
+  },
+  {
+   "modelId": "glm-4.6v-flash",
+   "label": {
+    "en": "glm-4.6v-flash"
+   },
+   "vision": true,
+   "reasoning": true,
+   "toolCall": true,
+   "contextSize": 131072,
+   "defaultMaxTokens": 131072
+  },
+  {
+   "modelId": "glm-4.6v-flashx",
+   "label": {
+    "en": "glm-4.6v-flashx"
+   },
+   "vision": true,
+   "reasoning": true,
+   "toolCall": true,
+   "contextSize": 131072,
+   "defaultMaxTokens": 131072
+  },
+  {
+   "modelId": "glm-4.6v",
+   "label": {
+    "en": "glm-4.6v"
+   },
+   "vision": true,
+   "reasoning": true,
+   "toolCall": true,
+   "contextSize": 131072,
+   "defaultMaxTokens": 16384
+  }
+ ]
+}
