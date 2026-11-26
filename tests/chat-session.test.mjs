@@ -20,6 +20,8 @@ test('Pi session streams text from an OpenAI compatible gateway',async t=>{
  const system=request.messages.find(message=>message.role==='system')?.content;
  assert.match(system,/No local project is selected/);
  assert.match(system,/attach the files/);
+ assert.match(system,/Follow the user's explicit language and output-format preferences/);
+ assert.doesNotMatch(system,/\b(?:project_create_office|skill_read|skill_bash|office_render|ask_user)\b/);
  assert.doesNotMatch(system,/Help users inspect files, run commands/);
  assert.match(body,/再说一次/);assert.match(body,/你好世界/);
  assert.match(body,/你好/);assert.equal(events.filter(e=>e.type==='delta').map(e=>e.text).join(''),'你好世界你好世界');assert.ok(events.some(e=>e.type==='completed'&&e.text==='你好世界'));
@@ -78,6 +80,8 @@ test('workspace sessions expose document tools, guidance and write into the chat
  assert.match(system,/PiWork documents folder/);
  assert.match(system,/never answer with a script/);
  assert.match(system,/office_render/);
+ assert.match(system,/Office task routing and delivery/);
+ assert.match(system,/A fresh document recreated from extracted text is not a faithful in-place edit/);
  const doc=path.join(workspace,'报告.docx');
  assert.equal(Buffer.from(await readFile(doc)).subarray(0,2).toString('ascii'),'PK');
  // 完成 tool 事件携带 workspace 绝对路径(主进程据此登记文档库)
