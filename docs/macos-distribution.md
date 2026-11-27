@@ -10,6 +10,8 @@ PiWork Desktop 使用 electron-builder 生成 Apple Silicon 的 DMG 和 ZIP，�
 
 ## 发版流水线与客户端自动更新
 
-发版走 GitHub Actions（`.github/workflows/release.yml`）：修改 `apps/desktop/package.json` 的 `version` → 提交 → 打同名 `vX.Y.Z` tag → push。CI 在 macos-14（arm64）上校验 tag 与版本一致、重建原生模块后执行 `pnpm release:mac`（electron-builder `--publish always`），自动创建 GitHub Release 并上传 `PiWork-<version>-arm64.dmg/.zip` 与 `latest-mac.yml`。
+发版走 GitHub Actions（`.github/workflows/release.yml`）：修改 `apps/desktop/package.json` 的 `version` → 提交 → 打同名 `vX.Y.Z` tag → push。CI 在 macos-latest（arm64）上校验 tag 与版本一致、重建原生模块后执行 `pnpm release:mac`（electron-builder `--publish always`），上传 `PiWork-<version>-arm64.dmg`、`PiWork-<version>-arm64-mac.zip` 与 `latest-mac.yml`。
+
+上传前先创建唯一的 Release 草稿，供 DMG 和 ZIP 的并行发布器复用，避免同一版本被拆成多个草稿。上传后按预先记录的 Release ID 检查 DMG、ZIP、对应的两份 blockmap 和更新信息均已完整上传，才将该草稿发布为 Latest；已正式发布的版本拒绝覆盖。
 
 客户端内置自动更新（`apps/desktop/electron/app-update.ts` 与 `app-update-core.ts`）：启动约 3 秒后静默检查 GitHub Releases latest（本地节流 24 小时，记录于 `<userData>/app-update-state.json`），设置 → 关于 → 软件更新卡片可手动「检查更新」。发现新版本后主界面侧栏底部出现「新版本 vX.Y.Z」入口；「下载更新」将 DMG 流式下载到 `<userData>/updates/`，按 GitHub 资产 digest 做 sha256 校验（无 digest 时仅校验 size），支持取消与同版本免重复下载。因应用未签名，安装方式为「打开安装包」挂载 DMG，由用户拖入 Applications；不做自动替换。更新源可用 `PIWORK_UPDATE_API` 环境变量覆盖（测试注入 mock 用）；未打包的 dev 运行不启用检查（设该变量时除外）。

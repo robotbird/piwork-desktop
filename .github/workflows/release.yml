@@ -11,6 +11,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   release-mac:
     runs-on: macos-latest
@@ -44,12 +48,40 @@ jobs:
       # better-sqlite3 等原生模块按 Electron ABI 重编(与本地 rebuild:electron 同步骤)
       - name: Rebuild native modules for Electron
         run: pnpm --dir apps/desktop exec electron-builder install-app-deps
+      # DMG and ZIP publishers must reuse one draft instead of racing to create it.
+      - name: Prepare draft release
+        run: |
+          if ! gh release view "$GITHUB_REF_NAME" --json databaseId >/dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" --draft --verify-tag \
+              --generate-notes --title "PiWork $GITHUB_REF_NAME"
+          fi
+          RELEASE="$(gh release view "$GITHUB_REF_NAME" --json databaseId,isDraft)"
+          if [ "$(jq -r '.isDraft' <<< "$RELEASE")" != "true" ]; then
+            echo "Release $GITHUB_REF_NAME is already published; refusing to overwrite it" >&2
+            exit 1
+          fi
+          echo "PIWORK_RELEASE_ID=$(jq -r '.databaseId' <<< "$RELEASE")" >> "$GITHUB_ENV"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Build and publish GitHub Release
         run: pnpm --dir apps/desktop release:mac
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      # electron-builder 默认创建 draft Release;自动转正式,客户端 releases/latest 才能发现
+      # Publish the exact prepared draft only after all expected assets are present.
       - name: Publish draft release
-        run: gh release edit "$GITHUB_REF_NAME" --draft=false
+        run: |
+          RELEASE="$(gh api "repos/$GITHUB_REPOSITORY/releases/$PIWORK_RELEASE_ID")"
+          VERSION="${GITHUB_REF_NAME#v}"
+          for NAME in "PiWork-$VERSION-arm64.dmg" "PiWork-$VERSION-arm64.dmg.blockmap" \
+            "PiWork-$VERSION-arm64-mac.zip" "PiWork-$VERSION-arm64-mac.zip.blockmap" "latest-mac.yml"; do
+            if ! jq -e --arg name "$NAME" \
+              '.assets | any(.name == $name and .state == "uploaded" and .size > 0)' \
+              <<< "$RELEASE" >/dev/null; then
+              echo "Release asset is missing or incomplete: $NAME" >&2
+              exit 1
+            fi
+          done
+          gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$PIWORK_RELEASE_ID" \
+            -F draft=false -f make_latest=true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
